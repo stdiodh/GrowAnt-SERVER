@@ -1,0 +1,33 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+    expose:
+      - "8080"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+# DB는 Supabase(클라우드)를 사용하므로 로컬 postgres 컨테이너는 불필요.
+# 오프라인 개발이 필요하면 아래 주석을 해제하고 .env의 SUPABASE_DB_URL을 로컬로 변경:
+#  postgres:
+#    image: postgres:16-alpine
+#    environment:
+#      POSTGRES_PASSWORD: postgres
+#    ports:
+#      - "5432:5432"
