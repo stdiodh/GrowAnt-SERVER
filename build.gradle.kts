@@ -32,3 +32,5 @@ dependencies {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     compilerOptions { freeCompilerArgs.add("-Xjsr305=strict") }
 }
+
+tasks.withType<Test> { useJUnitPlatform() }
