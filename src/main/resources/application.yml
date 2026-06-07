@@ -1,4 +1,6 @@
 spring:
+  # TODO(market-slice): 마켓 슬라이스는 DB 불필요. Supabase 없이 로컬 기동하려면 application-local.yml에서
+  #   spring.autoconfigure.exclude로 DataSource/JPA 오토컨피그 제외 후 `bootRun --args='--spring.profiles.active=local'`. 스펙 §3.6/C1
   datasource:
     url: ${SUPABASE_DB_URL}
     username: ${SUPABASE_DB_USER}

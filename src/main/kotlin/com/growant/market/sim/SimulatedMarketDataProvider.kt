@@ -13,6 +13,9 @@ import kotlin.random.Random
  * 시뮬레이션 시세 (KIS 보류 동안 사용). 랜덤워크로 현재가를 생성한다.
  * 확장 옵션: 변동성·추세·뉴스 시나리오를 LLM이 생성해 주입.
  */
+// NOTE(market-slice): REST 스냅샷(목록/상세)은 이 random-walk currentPrice()를 쓰지 않는다.
+//   스냅샷은 MarketService의 결정적 카탈로그로 서빙(목록↔상세 일관). 스펙 §3.2/C4
+//   이 provider의 currentPrice()/subscribe()(아래 TODO)는 실시간 스트리밍 슬라이스 몫. 스펙 §10
 @Component
 @ConditionalOnProperty(name = ["market.provider"], havingValue = "sim", matchIfMissing = true)
 class SimulatedMarketDataProvider : MarketDataProvider {
