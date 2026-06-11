@@ -19,6 +19,8 @@ class SecurityConfig {
                 it.requestMatchers("/api/market/**").permitAll()
                 it.requestMatchers("/api/portfolio/**").permitAll()
                 it.requestMatchers("/api/account/**").permitAll()
+                it.requestMatchers("/api/orders").permitAll()
+                it.requestMatchers("/api/trades").permitAll()
                 it.anyRequest().authenticated()
             }
         return http.build()
