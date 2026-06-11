@@ -26,3 +26,8 @@ server:
 # 시세 소스: sim | kis
 market:
   provider: ${MARKET_PROVIDER:sim}
+
+# 데모 로그인 JWT 서명 키(HS256, 32자=256bit 이상 필수) — 운영은 루트 .env의 JWT_SECRET. 스펙 §3.3
+auth:
+  jwt:
+    secret: ${JWT_SECRET:growant-dev-secret-please-override-32b!}
