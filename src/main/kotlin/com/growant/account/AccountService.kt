@@ -1,21 +1,26 @@
 package com.growant.account
 
 import com.growant.account.dto.AccountSummaryDto
+import com.growant.portfolio.PortfolioOwner
+import com.growant.portfolio.PortfolioService
+import com.growant.trading.TradingService
 import org.springframework.stereotype.Service
 import kotlin.math.roundToLong
 
 /**
- * 결정적 자산 요약(시드 1,000만 · 현금 250만 · 주식 802만).
- * 계정 보유종목엔 카탈로그 외 종목(애플)이 있어 마켓 연동은 거래 슬라이스에서 대체한다.
+ * 자산 요약 — 동적 산식: 총 평가 자산 = 현금(TradingService) + me 포트폴리오 평가액.
+ * 수익률은 시드(1,000만) 대비. 초기값은 10,520,000 / +5.2%로 기존 불변값과 동일.
  */
 @Service
-class AccountService {
+class AccountService(
+    private val tradingService: TradingService,
+    private val portfolioService: PortfolioService,
+) {
     private val seed = 10_000_000L
-    private val cash = 2_500_000L
-    private val stockValue = 8_020_000L
 
     fun getSummary(): AccountSummaryDto {
-        val totalAsset = cash + stockValue
+        val totalAsset = tradingService.getCash() +
+            portfolioService.getPortfolio(PortfolioOwner.ME).value
         val returnRate = ((totalAsset - seed) * 1000.0 / seed).roundToLong() / 10.0
         return AccountSummaryDto(totalAsset = totalAsset, returnRate = returnRate)
     }
