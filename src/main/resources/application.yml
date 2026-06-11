@@ -1,12 +1,15 @@
 spring:
-  # TODO(market-slice): 마켓 슬라이스는 DB 불필요. Supabase 없이 로컬 기동하려면 application-local.yml에서
+  # 루트 .env(KEY=VALUE)를 있으면 로드 — 시크릿 주입 골격(없으면 무시). 스펙 §5.2
+  config:
+    import: "optional:file:../.env[.properties]"
+  # TODO(market-slice): 마켓 슬라이스는 DB 불필요. DB 없이 로컬 기동하려면 application-local.yml에서
   #   spring.autoconfigure.exclude로 DataSource/JPA 오토컨피그 제외 후 `bootRun --args='--spring.profiles.active=local'`. 스펙 §3.6/C1
   datasource:
-    url: ${SUPABASE_DB_URL}
-    username: ${SUPABASE_DB_USER}
-    password: ${SUPABASE_DB_PASSWORD}
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     hikari:
-      maximum-pool-size: 5   # Supabase 풀러 사용 — 보수적으로 설정
+      maximum-pool-size: 5   # 데모 규모 — 보수적으로 설정
   jpa:
     hibernate:
       ddl-auto: validate

@@ -1,11 +1,13 @@
 package com.growant.portfolio
 
 import com.growant.market.MarketService
+import com.growant.trading.TradingService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class PortfolioServiceTest {
-    private val service = PortfolioService(MarketService())
+    private val market = MarketService()
+    private val service = PortfolioService(market, TradingService(market))
 
     @Test
     fun `ME portfolio aggregates to plus 5_2 percent`() {

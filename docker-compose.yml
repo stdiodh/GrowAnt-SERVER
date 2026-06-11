@@ -10,12 +10,17 @@ services:
 
   backend:
     build: ./backend
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false   # 없으면 기본값으로 기동(.env.example 참고)
     environment:
       SPRING_PROFILES_ACTIVE: dev
+      # 컨테이너 내부에서는 서비스명으로 접속(.env의 localhost 값을 덮어씀)
+      DB_URL: jdbc:postgresql://postgres:5432/growant
     expose:
       - "8080"
     depends_on:
+      - postgres
       - redis
 
   redis:
@@ -23,11 +28,17 @@ services:
     ports:
       - "6379:6379"
 
-# DB는 Supabase(클라우드)를 사용하므로 로컬 postgres 컨테이너는 불필요.
-# 오프라인 개발이 필요하면 아래 주석을 해제하고 .env의 SUPABASE_DB_URL을 로컬로 변경:
-#  postgres:
-#    image: postgres:16-alpine
-#    environment:
-#      POSTGRES_PASSWORD: postgres
-#    ports:
-#      - "5432:5432"
+  # 자체 호스팅 PostgreSQL — 데이터는 도커 볼륨(postgres-data)에 영속
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: growant
+      POSTGRES_USER: ${DB_USER:-growant}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-growant}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
