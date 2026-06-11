@@ -24,11 +24,13 @@ enum class ErrorCode(
 
     // VALIDATION / MARKET
     INVALID_TICKER(3000, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", false, "존재하지 않는 종목입니다."),
+    INVALID_ORDER(3001, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", false, "잘못된 주문입니다."),
     MARKET_DATA_UNAVAILABLE(3500, HttpStatus.SERVICE_UNAVAILABLE, "MARKET_ERROR", true, "시세를 불러오지 못했습니다."),
 
     // ORDER (가상 거래)
     ORDER_INSUFFICIENT_FUNDS(4000, HttpStatus.CONFLICT, "ORDER_ERROR", false, "잔고가 부족합니다."),
     ORDER_MARKET_CLOSED(4001, HttpStatus.CONFLICT, "ORDER_ERROR", false, "장 운영 시간이 아닙니다."),
+    ORDER_INSUFFICIENT_HOLDINGS(4002, HttpStatus.CONFLICT, "ORDER_ERROR", false, "보유 수량이 부족합니다."),
 
     // AI
     AI_RATE_LIMITED(6000, HttpStatus.TOO_MANY_REQUESTS, "AI_ERROR", true, "요청이 많습니다. 잠시 후 다시 시도해 주세요."),
