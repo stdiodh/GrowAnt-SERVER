@@ -17,11 +17,16 @@ services:
       SPRING_PROFILES_ACTIVE: dev
       # 컨테이너 내부에서는 서비스명으로 접속(.env의 localhost 값을 덮어씀)
       DB_URL: jdbc:postgresql://postgres:5432/growant
+      DB_USER: ${DB_USER:-growant}
+      DB_PASSWORD: ${DB_PASSWORD:-growant}
+      REDIS_HOST: redis
     expose:
       - "8080"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   redis:
     image: redis:7-alpine
@@ -39,6 +44,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-growant} -d growant"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   postgres-data:
