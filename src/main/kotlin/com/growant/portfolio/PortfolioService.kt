@@ -27,10 +27,10 @@ class PortfolioService(
         Position("035720", 20, 36_110),
     )
 
-    fun getPortfolio(owner: PortfolioOwner): PortfolioDto {
+    fun getPortfolio(owner: PortfolioOwner, userId: Long): PortfolioDto {
         val positions = when (owner) {
-            PortfolioOwner.ME -> tradingService.getMePositions()
-            PortfolioOwner.AI -> aiPositions
+            PortfolioOwner.ME -> tradingService.getMePositions(userId)
+            PortfolioOwner.AI -> aiPositions // NOTE(duel-ai): userId 무관 — AI 매매 슬라이스에서 대체
         }
         val market = marketService.getMarket().associateBy { it.ticker }
         val holdings = positions.map { p ->
