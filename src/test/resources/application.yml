@@ -1,0 +1,5 @@
+# 테스트 전용 — main의 application.yml을 클래스패스에서 가린다(spring.config.import의 루트 .env도 미로드).
+# 테스트가 환경(JWT_SECRET 등)에 좌우되지 않도록 시크릿을 고정한다. AuthServiceTest의 키와 동일 값.
+auth:
+  jwt:
+    secret: test-secret-must-be-32-bytes-min!!
