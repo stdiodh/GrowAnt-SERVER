@@ -2,6 +2,7 @@ package com.growant.support
 
 import com.growant.auth.UserEntity
 import com.growant.auth.UserJpaRepository
+import com.growant.common.INITIAL_CASH
 import com.growant.trading.PositionEntity
 import com.growant.trading.PositionJpaRepository
 import org.assertj.core.api.Assertions.assertThat
@@ -17,7 +18,7 @@ class RepositoryIT(
 
     @Test
     fun `Flyway 스키마에 사용자 저장·조회가 동작한다`() {
-        val saved = users.save(UserEntity(provider = "kakao", nickname = "스모크-유저", cash = 10_000_000L))
+        val saved = users.save(UserEntity(provider = "kakao", nickname = "스모크-유저", cash = INITIAL_CASH))
         assertThat(saved.id).isPositive()
         assertThat(users.findByProviderAndNickname("kakao", "스모크-유저")!!.id).isEqualTo(saved.id)
     }

@@ -4,6 +4,7 @@ import com.growant.auth.dto.AuthResponseDto
 import com.growant.auth.dto.LoginRequestDto
 import com.growant.auth.dto.UserDto
 import com.growant.common.web.ApiResponse
+import com.growant.common.web.userId
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.web.bind.annotation.GetMapping
@@ -24,7 +25,7 @@ class AuthController(private val service: AuthService) {
     @GetMapping("/me")
     fun me(@AuthenticationPrincipal jwt: Jwt): ApiResponse<UserDto> = ApiResponse.ok(
         UserDto(
-            jwt.subject.toLong(),
+            jwt.userId,
             // 우리 AuthService가 발급한 토큰에만 서명이 통과하므로 두 클레임은 항상 존재 — 누락은 발급 코드 버그.
             jwt.getClaimAsString("nickname") ?: error("nickname claim missing"),
             jwt.getClaimAsString("provider") ?: error("provider claim missing"),
