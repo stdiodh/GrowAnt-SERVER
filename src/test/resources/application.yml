@@ -1,5 +1,10 @@
-# 테스트 전용 — main의 application.yml을 클래스패스에서 가린다(spring.config.import의 루트 .env도 미로드).
-# 테스트가 환경(JWT_SECRET 등)에 좌우되지 않도록 시크릿을 고정한다. AuthServiceTest의 키와 동일 값.
+# 테스트 전용 — main application.yml을 클래스패스에서 가린다(spring.config.import의 루트 .env 미로드).
+# JWT_SECRET 등 환경 변수에 테스트가 좌우되지 않도록 고정한다.
 auth:
   jwt:
     secret: test-secret-must-be-32-bytes-min!!
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate   # Flyway 스키마와 엔티티 드리프트를 IT 부팅 시점에 검출(스펙 DRY §3-1)
