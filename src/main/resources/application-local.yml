@@ -1,8 +1,10 @@
-# 마켓 REST 슬라이스 로컬 구동용: DB/Redis 오토컨피그 제외(DB 불필요). 영속성 기능 슬라이스에서 정비.
+# 로컬 bootRun용 — DB는 docker compose의 postgres를 사용한다: 먼저 `docker compose up -d postgres`.
+# Redis는 ④ 실시세 슬라이스까지 미사용 — 오토컨피그만 제외한다.
 spring:
   autoconfigure:
     exclude:
-      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
-      - org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration
-      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
       - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://localhost:5432/growant
+    username: growant
+    password: growant
