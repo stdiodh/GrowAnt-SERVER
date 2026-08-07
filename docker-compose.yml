@@ -9,7 +9,7 @@ services:
       - backend
 
   backend:
-    build: ./backend
+    build: .
     env_file:
       - path: .env
         required: false   # 없으면 기본값으로 기동(.env.example 참고)

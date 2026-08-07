@@ -1,0 +1,16 @@
+# Env / secrets
+.env
+*.local
+
+# Gradle / Kotlin
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
