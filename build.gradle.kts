@@ -42,3 +42,25 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
 }
 
 tasks.withType<Test> { useJUnitPlatform() }
+
+val marketBenchmarkTicksPerMinute = providers.gradleProperty("marketBenchmarkTicksPerMinute").orElse("1000")
+val marketBenchmarkWarmupRounds = providers.gradleProperty("marketBenchmarkWarmupRounds").orElse("3")
+val marketBenchmarkMeasurementRounds = providers.gradleProperty("marketBenchmarkMeasurementRounds").orElse("7")
+
+tasks.register<JavaExec>("benchmarkMinuteCandles") {
+    val reportFile = layout.buildDirectory.file("reports/market-data/minute-candle-aggregation-benchmark.md")
+
+    group = "verification"
+    description = "Benchmarks replay tick aggregation and writes a Markdown report"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.growant.market.benchmark.MinuteCandleAggregationBenchmark")
+    args(
+        "--ticks-per-minute=${marketBenchmarkTicksPerMinute.get()}",
+        "--warmup-rounds=${marketBenchmarkWarmupRounds.get()}",
+        "--measurement-rounds=${marketBenchmarkMeasurementRounds.get()}",
+        "--output=${reportFile.get().asFile}",
+    )
+    outputs.file(reportFile)
+    outputs.upToDateWhen { false }
+}
