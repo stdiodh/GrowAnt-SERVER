@@ -2,11 +2,17 @@ package com.growant.market.sim
 
 import com.growant.market.port.MarketDataProvider
 import com.growant.market.port.Tick
+import jakarta.annotation.PreDestroy
+import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 /**
@@ -15,12 +21,17 @@ import kotlin.random.Random
  */
 // NOTE(market-slice): REST 스냅샷(목록/상세)은 이 random-walk currentPrice()를 쓰지 않는다.
 //   스냅샷은 MarketService의 결정적 카탈로그로 서빙(목록↔상세 일관). 스펙 §3.2/C4
-//   이 provider의 currentPrice()/subscribe()(아래 TODO)는 실시간 스트리밍 슬라이스 몫. 스펙 §10
+//   이 provider의 currentPrice()/subscribe()는 로컬 실시간 스트리밍 검증에만 사용한다. 스펙 §10
 @Component
 @ConditionalOnProperty(name = ["market.provider"], havingValue = "sim", matchIfMissing = true)
 class SimulatedMarketDataProvider : MarketDataProvider {
 
     private val last = ConcurrentHashMap<String, BigDecimal>()
+    private val subscriptions = ConcurrentHashMap<String, ScheduledFuture<*>>()
+    private val sequence = AtomicLong()
+    private val scheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "simulated-market-data").apply { isDaemon = true }
+    }
 
     private fun seed(ticker: String): BigDecimal =
         last.getOrPut(ticker) { BigDecimal(50_000 + Random.nextInt(50_000)) }
@@ -34,10 +45,46 @@ class SimulatedMarketDataProvider : MarketDataProvider {
     }
 
     override fun subscribe(ticker: String, onTick: (Tick) -> Unit) {
-        // TODO: 스케줄러로 주기적 onTick 발행 → market 서비스에서 Redis pub/sub 으로 브로드캐스트
+        subscriptions.computeIfAbsent(ticker) {
+            scheduler.scheduleAtFixedRate(
+                {
+                    try {
+                        val price = currentPrice(ticker)
+                        onTick(
+                            Tick(
+                                ticker = ticker,
+                                price = price,
+                                changeRate = 0.0,
+                                epochMillis = System.currentTimeMillis(),
+                                quantity = Random.nextLong(1, 1_001),
+                                sequence = sequence.incrementAndGet(),
+                            ),
+                        )
+                    } catch (exception: Exception) {
+                        logger.error("Simulated tick callback failed for ticker={}", ticker, exception)
+                    }
+                },
+                0,
+                1,
+                TimeUnit.SECONDS,
+            )
+        }
     }
 
     override fun unsubscribe(ticker: String) {
+        subscriptions.remove(ticker)?.cancel(false)
         last.remove(ticker)
+    }
+
+    @PreDestroy
+    fun close() {
+        subscriptions.values.forEach { it.cancel(false) }
+        subscriptions.clear()
+        last.clear()
+        scheduler.shutdownNow()
+    }
+
+    private companion object {
+        val logger = LoggerFactory.getLogger(SimulatedMarketDataProvider::class.java)
     }
 }

@@ -17,4 +17,6 @@ data class Tick(
     val price: BigDecimal,
     val changeRate: Double,
     val epochMillis: Long,
+    val quantity: Long,
+    val sequence: Long,
 )
