@@ -7,6 +7,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
+import org.mockito.Mockito.verifyNoInteractions
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -52,6 +53,24 @@ class MarketCandleCollectorTest {
     }
 
     @Test
+    fun `ignores a provider tick routed to the wrong subscription`() {
+        collector.start()
+        provider.emitFor(
+            "005930",
+            Tick(
+                ticker = "000660",
+                price = BigDecimal("178500"),
+                changeRate = 0.0,
+                epochMillis = Instant.parse("2026-08-10T00:00:10Z").toEpochMilli(),
+                quantity = 1,
+                sequence = 8,
+            ),
+        )
+
+        verifyNoInteractions(ingestion)
+    }
+
+    @Test
     fun `unsubscribes tracked tickers on shutdown`() {
         collector.start()
 
@@ -89,6 +108,10 @@ class MarketCandleCollectorTest {
 
         fun emit(tick: Tick) {
             checkNotNull(callbacks[tick.ticker]).invoke(tick)
+        }
+
+        fun emitFor(subscriptionTicker: String, tick: Tick) {
+            checkNotNull(callbacks[subscriptionTicker]).invoke(tick)
         }
     }
 }

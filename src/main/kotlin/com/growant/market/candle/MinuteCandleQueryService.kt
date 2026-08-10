@@ -42,8 +42,12 @@ class MinuteCandleQueryService(
     }
 
     private fun validateTicker(ticker: String) {
-        if (marketService.getMarket().none { it.ticker == ticker }) {
+        val market = marketService.getMarket()
+        if (market.none { it.ticker == ticker }) {
             throw BusinessException(ErrorCode.INVALID_TICKER)
+        }
+        if (ticker !in TRACKED_MINUTE_CANDLE_TICKERS) {
+            throw BusinessException(ErrorCode.CANDLE_TICKER_NOT_TRACKED)
         }
     }
 

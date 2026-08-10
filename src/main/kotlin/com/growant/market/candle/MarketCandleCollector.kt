@@ -3,12 +3,21 @@ package com.growant.market.candle
 import com.growant.market.MarketService
 import com.growant.market.port.MarketDataProvider
 import jakarta.annotation.PreDestroy
+import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Instant
+
+internal val TRACKED_MINUTE_CANDLE_TICKERS = listOf(
+    "005930",
+    "000660",
+    "035720",
+    "035420",
+    "005380",
+)
 
 @Component
 @ConditionalOnProperty(name = ["market.candles.collection-enabled"], havingValue = "true")
@@ -23,21 +32,31 @@ class MarketCandleCollector(
     fun start() {
         if (subscribedTickers.isNotEmpty()) return
 
-        marketService.getMarket().take(TRACKED_TICKER_COUNT).forEach { row ->
-            subscribedTickers += row.ticker
-            provider.subscribe(row.ticker) { tick ->
-                val occurredAt = Instant.ofEpochMilli(tick.epochMillis)
-                ingestionService.accept(
-                    TradeTick(
-                        ticker = tick.ticker,
-                        price = tick.price.intValueExact(),
-                        quantity = tick.quantity,
-                        occurredAt = occurredAt,
-                        sequence = tick.sequence,
-                    ),
-                )
+        marketService.getMarket()
+            .filter { it.ticker in TRACKED_MINUTE_CANDLE_TICKERS }
+            .forEach { row ->
+                subscribedTickers += row.ticker
+                provider.subscribe(row.ticker) onTick@{ tick ->
+                    if (tick.ticker != row.ticker) {
+                        logger.warn(
+                            "Ignored misrouted tick: subscribed={}, received={}",
+                            row.ticker,
+                            tick.ticker,
+                        )
+                        return@onTick
+                    }
+                    val occurredAt = Instant.ofEpochMilli(tick.epochMillis)
+                    ingestionService.accept(
+                        TradeTick(
+                            ticker = tick.ticker,
+                            price = tick.price.intValueExact(),
+                            quantity = tick.quantity,
+                            occurredAt = occurredAt,
+                            sequence = tick.sequence,
+                        ),
+                    )
+                }
             }
-        }
     }
 
     @Scheduled(fixedDelay = 1_000)
@@ -52,7 +71,7 @@ class MarketCandleCollector(
     }
 
     private companion object {
-        const val TRACKED_TICKER_COUNT = 5
+        val logger = LoggerFactory.getLogger(MarketCandleCollector::class.java)
         const val FINALIZATION_DELAY_SECONDS = 5L
     }
 }

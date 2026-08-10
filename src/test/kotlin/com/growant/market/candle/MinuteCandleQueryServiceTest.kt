@@ -48,7 +48,7 @@ class MinuteCandleQueryServiceTest {
     }
 
     @Test
-    fun `rejects unsupported ticker`() {
+    fun `rejects unknown ticker`() {
         assertThatThrownBy {
             service.getCandles(
                 "999999",
@@ -57,6 +57,20 @@ class MinuteCandleQueryServiceTest {
             )
         }.isInstanceOf(BusinessException::class.java)
             .satisfies({ assertThat((it as BusinessException).code).isEqualTo(ErrorCode.INVALID_TICKER) })
+    }
+
+    @Test
+    fun `rejects a catalog ticker outside the tracked five`() {
+        assertThatThrownBy {
+            service.getCandles(
+                "000270",
+                Instant.parse("2026-08-10T00:00:00Z"),
+                Instant.parse("2026-08-10T00:01:00Z"),
+            )
+        }.isInstanceOf(BusinessException::class.java)
+            .satisfies({
+                assertThat((it as BusinessException).code).isEqualTo(ErrorCode.CANDLE_TICKER_NOT_TRACKED)
+            })
     }
 
     @Test

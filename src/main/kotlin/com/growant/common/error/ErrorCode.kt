@@ -27,6 +27,7 @@ enum class ErrorCode(
     INVALID_ORDER(3001, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", false, "잘못된 주문입니다."),
     INVALID_LOGIN(3002, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", false, "잘못된 로그인 요청입니다."),
     INVALID_CANDLE_RANGE(3003, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", false, "분봉 조회 기간이 올바르지 않습니다."),
+    CANDLE_TICKER_NOT_TRACKED(3004, HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", false, "이 종목은 현재 분봉 수집 대상이 아닙니다."),
     MARKET_DATA_UNAVAILABLE(3500, HttpStatus.SERVICE_UNAVAILABLE, "MARKET_ERROR", true, "시세를 불러오지 못했습니다."),
 
     // ORDER (가상 거래)
