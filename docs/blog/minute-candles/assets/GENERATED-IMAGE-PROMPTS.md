@@ -7,7 +7,7 @@
 - 공통 목적: 어려운 개념을 쉽게 설명하는 삽화
 - 제외 범위: 실제 실행 증거, 공급자 성능, 계약 승인, 운영 배포 상태
 
-원본 이미지를 편집하지 않고 네 장 모두 새로 생성했습니다. 설명용 삽화에는 실제 측정 수치와 공급자 로고를 넣지 않았습니다.
+네 장 모두 ImageGen으로 생성했습니다. 최종 검수에서 썸네일의 캔들 색과 사용 권리 삽화의 승인 표현을 편집했고, OHLCV 삽화는 좌표 관계를 오해하지 않도록 초안을 폐기한 뒤 새로 생성했습니다. 설명용 삽화에는 실제 측정 수치와 공급자 로고를 넣지 않았습니다.
 
 ## `thumbnail-minute-candles-final.png`
 
@@ -21,16 +21,51 @@ STYLE: A developer's real notebook sketch / hand-drawn technical note, modest an
 AVOID: futuristic dashboard, neon, gradients, glassmorphism, 3D, photorealism, rockets, stars, robots, glowing effects, heavy shadows, excessive cards or badges, corporate advertising, dense text, fake code, gibberish, logos, watermarks.
 ```
 
+### 최종 교정 프롬프트
+
+```text
+Edit this existing 16:9 hand-drawn developer-blog thumbnail with one precise correction only.
+
+KEEP: the exact Korean title "주식 1분봉 만들기", all lettering, paper texture, timestamps, clock, database, phone, arrows, layout, crop, margins, hand-drawn navy pen style, and all other objects unchanged.
+
+CHANGE ONLY THE SINGLE LARGE CANDLE BETWEEN THE CLOCK AND DATABASE: it currently has one body split into red on top and blue on bottom, which is financially misleading. Replace it with one normal candlestick using a single solid muted blue fill for the entire rectangular body, with one continuous upper wick and one continuous lower wick in navy. Do not split the body, do not add another candle, and do not alter the small phone chart.
+
+Do not add or remove any text. Preserve the exact 16:9 composition and title spelling.
+```
+
 ## `06-ticks-to-ohlcv.png`
 
 ```text
-Create a 16:9 landscape scientific-educational illustration for a Korean developer blog.
+Create a brand-new 16:9 landscape scientific-educational illustration for a Korean developer blog.
 
-CONCEPT: Several individual stock trades inside one minute are summarized into one OHLCV candlestick.
-COMPOSITION: Bright off-white lightly textured notebook paper. On the left, draw six small trade points on a simple price-over-time sketch. Make the first point an open circle, the last point a filled circle, with one obvious highest point and one obvious lowest point. In the center, gather them with a loose hand-drawn brace or funnel into a small analog one-minute clock. On the right, draw one large accurate candlestick: the body visually spans the first and last trade prices, the upper and lower wicks reach the highest and lowest points, and a small stack of tally marks or blocks below represents the summed volume. Use simple arrows and generous whitespace. Keep all key content within the central 80% and 8% safe margins.
-STYLE: A real developer's study notebook, slightly uneven black/navy ballpoint strokes, subtle blue (#2563EB) aggregation marks, one small green (#10B981) accent on the completed result. Clean enough to teach, visibly hand-drawn rather than vector-perfect.
-TEXT: No words, no letters, no numbers, no timestamps, no labels, no equations, no pseudo-writing, no logos, no watermark.
-AVOID: dashboards, multiple candlestick charts, moving-average lines, coins, currency symbols, company logos, 3D, gradients, neon, glass cards, glossy corporate infographic style, dense decoration, impossible axes, polished vector geometry.
+CONCEPT ONLY: Many individual stock trades recorded during one minute are gathered and summarized into one standard candlestick plus total volume. Do NOT attempt to map plotted point heights to candle edges; the accompanying table explains the exact OHLC calculation.
+
+COMPOSITION: Bright off-white lightly textured notebook paper. On the left, draw six separate small trade-record tokens arranged loosely in time order. Each token is only a tiny outlined receipt shape containing one simple price dot and one small quantity tally—no words or numbers. Do not connect the tokens into a line graph. In the center, draw a clear hand-drawn funnel wrapped by a small analog one-minute clock, gathering all six tokens. On the right, draw one normal standard candlestick with a single solid muted blue rectangular body and one continuous upper wick and lower wick, plus a separate neat row of tally marks underneath for total volume. Use simple left-to-right arrows and generous whitespace. Keep all important content inside the central 80% with 8% safe margins.
+
+STYLE: A real developer's study notebook, slightly uneven black/navy ballpoint strokes, restrained blue (#2563EB), and a tiny green (#10B981) accent on the completed grouping. Clean but visibly hand drawn, not vector-perfect.
+
+ACCURACY: exactly one candlestick; its body must be a single color, never split; volume must be visibly separate below it; no moving-average line; no connected price line; no check mark or approval symbol.
+
+TEXT: No words, letters, numbers, timestamps, labels, equations, logos, pseudo-writing, or watermark.
+
+AVOID: dashboards, multiple charts, coins, currency symbols, company logos, 3D, gradients, neon, glass cards, corporate infographic styling, dense decoration, fake axes, and any visual claim that token heights directly align with candle edges.
+```
+
+### 최종 교정 프롬프트
+
+```text
+Edit this existing 16:9 hand-drawn trade-tokens-to-candlestick illustration with one precise correction to avoid a false arithmetic claim.
+
+KEEP: off-white notebook paper, six receipt-like trade tokens on the left, their price dots, central funnel and one-minute clock, arrows, single solid blue candlestick with upper/lower wick, hand-drawn navy/blue style, layout, crop, margins, and generous whitespace.
+
+CHANGE THE VOLUME SYMBOLS ONLY:
+- Inside every trade token, remove all countable tally marks.
+- Replace those tally marks with one simple solid muted-blue horizontal quantity bar. Let the six bars have visibly different lengths, but none may contain segments, ticks, numbers, or countable units.
+- Under the completed candlestick, remove all countable tally marks.
+- Replace them with one single long muted-blue horizontal volume bar, with the existing small green brace underneath if helpful.
+- The result should communicate "different trade quantities are combined into total volume" without allowing the viewer to count units or infer a numeric sum.
+
+Do not add text, letters, numbers, labels, check marks, logos, or watermarks. Do not change the candle or any other object. Preserve exact 16:9 composition and the developer-notebook style.
 ```
 
 ## `07-rights-before-speed.png`
@@ -43,6 +78,18 @@ COMPOSITION: On bright white lightly textured notebook paper, show three small u
 STYLE: Human developer notebook sketch, slightly uneven black/navy ink lines, restrained blue (#2563EB), green (#10B981), and a tiny yellow accent (#F59E0B), generous whitespace, simple and educational.
 TEXT: No words, no letters, no numbers, no labels, no logos, no pseudo-text, no watermark.
 AVOID: corporate infographic cards, futuristic dashboards, neon, gradients, glassmorphism, 3D, photorealistic hands, robots, rockets, glowing effects, stock exchange logos, brand marks, dense decorations, glossy advertising.
+```
+
+### 최종 교정 프롬프트
+
+```text
+Edit this existing 16:9 hand-drawn market-data permission illustration with one semantic correction.
+
+KEEP: the white ruled notebook paper, three unbranded input plugs on the left, the central document gate, database/screen/people icons, yellow highlighter, keyhole, arrow to stopwatch and speed gauge, hand-drawn navy/blue style, crop, spacing, and all other objects.
+
+CHANGE: remove every green approval check mark from the document. Replace each of the three check marks with an EMPTY outlined checkbox or empty outlined circle in dark navy. Add one small hand-drawn magnifying glass resting beside the document to make the meaning "questions that must be investigated," not "permissions already approved." The gate must remain visually closed/conditional and must not look like an official license certificate.
+
+Do not add words, letters, numbers, logos, seals, signatures, approval badges, or watermarks. Keep the exact 16:9 composition and the same simple developer-notebook style.
 ```
 
 ## `08-one-source-many-users.png`
