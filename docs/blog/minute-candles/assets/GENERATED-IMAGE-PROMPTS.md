@@ -1,13 +1,46 @@
 # 분봉 블로그 생성 이미지 프롬프트
 
 - 생성일: 2026-08-11
-- 생성 방식: Codex 내장 ImageGen
+- 생성 방식: 삽화·종이 배경은 Codex 내장 ImageGen, 결과표의 한글·수치·선은 HTML/Chrome 렌더링
 - 참고 가이드: `THUMBNAIL.md`, `DESIGN.md`
-- 공통 규격: 16:9 가로형 PNG, 1672×941px
+- 삽화 규격: 16:9 가로형 PNG, 1672×941px
+- 결과표 규격: 4:5 세로형 PNG, 1080×1350px
 - 공통 목적: 어려운 개념을 쉽게 설명하는 삽화
 - 제외 범위: 실제 실행 증거, 공급자 성능, 계약 승인, 운영 배포 상태
 
-네 장 모두 ImageGen으로 생성했습니다. 최종 검수에서 썸네일의 캔들 색과 사용 권리 삽화의 승인 표현을 편집했고, OHLCV 삽화는 좌표 관계를 오해하지 않도록 초안을 폐기한 뒤 새로 생성했습니다. 설명용 삽화에는 실제 측정 수치와 공급자 로고를 넣지 않았습니다.
+대표 이미지와 설명용 삽화 세 장은 ImageGen으로 생성했습니다. 최종 검수에서 썸네일의 캔들 색과 사용 권리 삽화의 승인 표현을 편집했고, OHLCV 삽화는 좌표 관계를 오해하지 않도록 초안을 폐기한 뒤 새로 생성했습니다. 설명용 삽화에는 실제 측정 수치와 공급자 로고를 넣지 않았습니다.
+
+결과 요약 `02`~`05`는 같은 분위기를 유지하면서도 한글과 수치를 정확히 보존하기 위해 혼합 방식으로 만들었습니다. ImageGen은 글자가 없는 공통 종이 배경만 만들고, 표·수치·선·강조는 `source/result-sheets.html`과 `scripts/render-blog-result-sheets.cjs`로 결정적으로 렌더링합니다.
+
+## `source/result-paper-background.png`
+
+```text
+Use case: productivity-visual
+Asset type: reusable blank background for four Korean developer-blog benchmark result sheets
+
+Create a completely blank 16:9 landscape notebook-paper background that matches a real developer's hand-drawn technical study note.
+
+Scene/backdrop: bright warm off-white paper with very subtle natural fibers and faint pale-blue horizontal notebook ruling. Add only tiny imperfect navy pen corner marks, one short blue underline stroke near the upper left, and one very small yellow highlighter swipe near the lower right. The entire central 88% must remain clean and empty so exact tables and Korean text can be overlaid later.
+
+Style/medium: scanned notebook paper, understated, human, slightly imperfect, calm and educational. White/off-white #F8FAFC, navy #0F172A, restrained blue #2563EB, tiny yellow #F59E0B.
+
+Composition/framing: exact 16:9 landscape, generous 7% safe margin, flat front-facing paper, no perspective, no objects.
+
+Text: no text, letters, numbers, symbols, labels, pseudo-writing, logos, or watermark.
+
+Avoid: cards, boxes, dashboards, charts, icons, gradients, glassmorphism, neon, 3D, heavy shadows, glossy advertising, torn edges, desk props, hands, pens, clips, sticky notes, dense texture.
+```
+
+### 결과표 렌더링 방식
+
+- 대상: `02-local-api-evidence.png`, `03-storage-aggregation.png`, `04-k6-load-test.png`, `05-gradle-integration-tests.png`
+- 배경: 위 ImageGen 원본
+- 정확한 글자·표: 로컬 HTML/CSS 렌더링
+- 글꼴: Pretendard, 수치 보조 D2Coding
+- 재현 명령: `node scripts/render-blog-result-sheets.cjs`
+- 재현 조건: Chrome, Pretendard, D2Coding, `playwright-core`가 필요하며 다른 설치 경로는 `CHROME_BIN`, `PLAYWRIGHT_CORE_PATH`로 지정
+- 원칙: 어두운 대시보드·카드·배지를 피하고, 가로 줄과 펜 선으로 결과를 구분합니다.
+- 본문 적용: Velog 모바일 폭에서도 표를 읽을 수 있도록 4:5 세로형과 34px 이상의 본문 글자를 사용합니다.
 
 ## `thumbnail-minute-candles-final.png`
 
