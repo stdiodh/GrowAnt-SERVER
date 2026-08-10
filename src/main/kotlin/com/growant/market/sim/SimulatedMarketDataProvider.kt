@@ -13,6 +13,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 import kotlin.random.Random
 
 /**
@@ -24,7 +25,9 @@ import kotlin.random.Random
 //   이 provider의 currentPrice()/subscribe()는 로컬 실시간 스트리밍 검증에만 사용한다. 스펙 §10
 @Component
 @ConditionalOnProperty(name = ["market.provider"], havingValue = "sim", matchIfMissing = true)
-class SimulatedMarketDataProvider : MarketDataProvider {
+class SimulatedMarketDataProvider internal constructor(
+    private val random: Random = Random.Default,
+) : MarketDataProvider {
 
     private val last = ConcurrentHashMap<String, BigDecimal>()
     private val subscriptions = ConcurrentHashMap<String, ScheduledFuture<*>>()
@@ -34,12 +37,22 @@ class SimulatedMarketDataProvider : MarketDataProvider {
     }
 
     private fun seed(ticker: String): BigDecimal =
-        last.getOrPut(ticker) { BigDecimal(50_000 + Random.nextInt(50_000)) }
+        last.getOrPut(ticker) {
+            val unalignedPrice = BigDecimal(50_000 + random.nextInt(50_000))
+            val unit = priceUnit(unalignedPrice)
+            unalignedPrice.divide(unit, 0, RoundingMode.HALF_UP).multiply(unit)
+        }
 
     override fun currentPrice(ticker: String): BigDecimal {
         val prev = seed(ticker)
-        val drift = BigDecimal(Random.nextDouble(-0.01, 0.01)).multiply(prev)
-        val next = prev.add(drift).max(BigDecimal.ONE).setScale(0, RoundingMode.HALF_UP)
+        val movementInTicks = when (random.nextInt(100)) {
+            0 -> -2
+            in 1..24 -> -1
+            in 25..74 -> 0
+            in 75..98 -> 1
+            else -> 2
+        }
+        val next = moveByTicks(prev, movementInTicks)
         last[ticker] = next
         return next
     }
@@ -56,7 +69,7 @@ class SimulatedMarketDataProvider : MarketDataProvider {
                                 price = price,
                                 changeRate = 0.0,
                                 epochMillis = System.currentTimeMillis(),
-                                quantity = Random.nextLong(1, 1_001),
+                                quantity = random.nextLong(1, 1_001),
                                 sequence = sequence.incrementAndGet(),
                             ),
                         )
@@ -82,6 +95,35 @@ class SimulatedMarketDataProvider : MarketDataProvider {
         subscriptions.clear()
         last.clear()
         scheduler.shutdownNow()
+    }
+
+    internal fun moveByTicks(price: BigDecimal, movementInTicks: Int): BigDecimal {
+        require(price > BigDecimal.ZERO) { "price must be positive" }
+        require(movementInTicks in -2..2) { "movementInTicks must be between -2 and 2" }
+
+        val direction = movementInTicks.compareTo(0)
+        var next = price
+        repeat(abs(movementInTicks)) {
+            val unitReference = if (direction < 0) {
+                next.subtract(BigDecimal.ONE).max(BigDecimal.ONE)
+            } else {
+                next
+            }
+            next = next
+                .add(priceUnit(unitReference).multiply(BigDecimal.valueOf(direction.toLong())))
+                .max(BigDecimal.ONE)
+        }
+        return next
+    }
+
+    internal fun priceUnit(price: BigDecimal): BigDecimal = when {
+        price < BigDecimal(2_000) -> BigDecimal.ONE
+        price < BigDecimal(5_000) -> BigDecimal(5)
+        price < BigDecimal(20_000) -> BigDecimal.TEN
+        price < BigDecimal(50_000) -> BigDecimal(50)
+        price < BigDecimal(200_000) -> BigDecimal(100)
+        price < BigDecimal(500_000) -> BigDecimal(500)
+        else -> BigDecimal(1_000)
     }
 
     private companion object {

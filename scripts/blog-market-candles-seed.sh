@@ -8,8 +8,9 @@ usage() {
     printf '%s\n' \
         "Usage: scripts/blog-market-candles-seed.sh [samsung-day|catalog-week]" \
         "" \
-        "  samsung-day  Insert 390 candles for 005930 on one trading day." \
+        "  samsung-day  Insert 390 candles for 005930 on one trading day (quick screen seed only)." \
         "  catalog-week Insert 9,750 candles for five catalog tickers over five trading days." \
+        "               Use this scope with blog-market-candles-evidence.sh." \
         "" \
         "Optional environment variables:" \
         "  BLOG_SEED_START_DATE  First trading date (default: ${BLOG_DEFAULT_START_DATE})" \
@@ -121,11 +122,11 @@ WITH config AS (
 ),
 catalog(ticker, base_price, price_unit, ticker_order) AS (
     VALUES
-        ('005930',  76300, 10, 0),
-        ('000660', 178500, 20, 1),
-        ('035720',  41200, 10, 2),
-        ('035420', 198400, 20, 3),
-        ('005380', 247000, 50, 4)
+        ('005930',  76300, 100, 0),
+        ('000660', 178500, 100, 1),
+        ('035720',  41200,  50, 2),
+        ('035420', 198400, 100, 3),
+        ('005380', 247000, 500, 4)
 ),
 selected_catalog AS (
     SELECT catalog.*
@@ -140,21 +141,67 @@ trading_days AS (
     FROM config
     CROSS JOIN LATERAL generate_series(0, config.trading_day_count - 1) AS days(day_index)
 ),
-minute_points AS (
+minute_inputs AS (
     SELECT
         selected_catalog.*,
         trading_days.trade_date,
         trading_days.day_index,
         minute_index,
-        selected_catalog.base_price
-            + trading_days.day_index * selected_catalog.price_unit * 4
-            + ((minute_index * 11 + selected_catalog.ticker_order * 7) % 81 - 40)
-                * selected_catalog.price_unit AS open_price,
-        (((minute_index * 7 + trading_days.day_index * 3 + selected_catalog.ticker_order * 5) % 9) - 4)
-            * selected_catalog.price_unit AS close_delta
+        minute_index / 13 AS motion_block,
+        minute_index % 13 AS motion_position
     FROM selected_catalog
     CROSS JOIN trading_days
     CROSS JOIN generate_series(0, 389) AS minutes(minute_index)
+),
+motion_slots AS (
+    SELECT
+        minute_inputs.*,
+        (
+            motion_position
+                * ((motion_block + day_index * 3 + ticker_order * 5) % 12 + 1)
+            + (motion_block * 7 + day_index * 11 + ticker_order * 17) % 13
+        ) % 13 AS motion_slot
+    FROM minute_inputs
+),
+price_movements AS (
+    SELECT
+        motion_slots.*,
+        CASE
+            WHEN motion_slot = 3 THEN 2
+            WHEN motion_slot IN (0, 7, 10) THEN 1
+            WHEN motion_slot IN (1, 4, 9) THEN -1
+            WHEN motion_slot = 6 THEN -2
+            ELSE 0
+        END * price_unit AS close_delta,
+        CASE
+            WHEN minute_index = 0 AND day_index > 0
+                THEN (((day_index * 3 + ticker_order * 2) % 5) - 2) * price_unit
+            ELSE 0
+        END AS session_gap
+    FROM motion_slots
+),
+continuous_prices AS (
+    SELECT
+        price_movements.*,
+        (
+            base_price
+            - SUM(close_delta) OVER (PARTITION BY ticker)
+            - SUM(session_gap) OVER (PARTITION BY ticker)
+            + COALESCE(
+                SUM(close_delta) OVER (
+                    PARTITION BY ticker
+                    ORDER BY day_index, minute_index
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                ),
+                0
+            )
+            + SUM(session_gap) OVER (
+                PARTITION BY ticker
+                ORDER BY day_index, minute_index
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            )
+        )::INTEGER AS open_price
+    FROM price_movements
 ),
 candles AS (
     SELECT
@@ -167,12 +214,22 @@ candles AS (
         LEAST(open_price, open_price + close_delta)
             - ((minute_index * 2 + day_index + ticker_order) % 5 + 1) * price_unit AS low,
         open_price + close_delta AS close,
-        (1000 + ticker_order * 300 + day_index * 250 + (minute_index * 97) % 5000)::BIGINT AS volume,
-        (10 + (minute_index * 13 + ticker_order * 3) % 90)::BIGINT AS trade_count,
+        (
+            1500
+            + ticker_order * 300
+            + day_index * 120
+            + ABS(2 * minute_index - 389) * 12
+            + (minute_index * 97 + day_index * 41 + ticker_order * 211) % 800
+        )::BIGINT AS volume,
+        (
+            20
+            + ABS(2 * minute_index - 389) / 20
+            + (minute_index * 13 + day_index * 7 + ticker_order * 3) % 45
+        )::BIGINT AS trade_count,
         1 AS revision,
         TRUE AS is_final,
         'blog-local-seed'::VARCHAR(40) AS source
-    FROM minute_points
+    FROM continuous_prices
 )
 INSERT INTO blog_seed_expected (
     ticker,
