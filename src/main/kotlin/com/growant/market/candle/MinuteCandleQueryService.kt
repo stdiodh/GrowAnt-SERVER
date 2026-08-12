@@ -2,63 +2,44 @@ package com.growant.market.candle
 
 import com.growant.common.error.BusinessException
 import com.growant.common.error.ErrorCode
-import com.growant.market.MarketService
-import com.growant.market.candle.dto.MinuteCandleDto
-import com.growant.market.candle.dto.MinuteCandleSeriesDto
-import com.growant.market.candle.persistence.MinuteCandleStore
+import com.growant.market.candle.port.MinuteCandleRepository
+import com.growant.market.port.InstrumentCatalog
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.time.Duration
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneId
 
 @Service
 class MinuteCandleQueryService(
-    private val marketService: MarketService,
-    private val store: MinuteCandleStore,
+    private val instrumentCatalog: InstrumentCatalog,
+    private val repository: MinuteCandleRepository,
+    private val policy: MinuteCandlePolicy = MinuteCandlePolicy(CandleProperties()),
 ) {
     @Transactional(readOnly = true)
-    fun getCandles(ticker: String, fromInclusive: Instant, toExclusive: Instant): MinuteCandleSeriesDto {
+    fun getCandles(ticker: String, fromInclusive: Instant, toExclusive: Instant): MinuteCandleSeries {
         validateTicker(ticker)
         validateRange(fromInclusive, toExclusive)
 
-        return MinuteCandleSeriesDto(
+        return MinuteCandleSeries(
             ticker = ticker,
-            candles = store.find(ticker, fromInclusive, toExclusive).map { candle ->
-                MinuteCandleDto(
-                    time = candle.bucketStart.atZone(SEOUL).toOffsetDateTime(),
-                    open = candle.open,
-                    high = candle.high,
-                    low = candle.low,
-                    close = candle.close,
-                    volume = candle.volume,
-                    tradeCount = candle.tradeCount,
-                    final = candle.isFinal,
-                    revision = candle.revision,
-                )
-            },
+            zoneId = policy.zoneId,
+            candles = repository.find(ticker, fromInclusive, toExclusive),
         )
     }
 
     private fun validateTicker(ticker: String) {
-        val market = marketService.getMarket()
-        if (market.none { it.ticker == ticker }) {
+        if (!instrumentCatalog.contains(ticker)) {
             throw BusinessException(ErrorCode.INVALID_TICKER)
         }
-        if (ticker !in TRACKED_MINUTE_CANDLE_TICKERS) {
+        if (!policy.tracks(ticker)) {
             throw BusinessException(ErrorCode.CANDLE_TICKER_NOT_TRACKED)
         }
     }
 
     private fun validateRange(fromInclusive: Instant, toExclusive: Instant) {
-        if (!fromInclusive.isBefore(toExclusive) || Duration.between(fromInclusive, toExclusive) > MAX_RANGE) {
+        if (!fromInclusive.isBefore(toExclusive) ||
+            java.time.Duration.between(fromInclusive, toExclusive) > policy.maxQueryRange
+        ) {
             throw BusinessException(ErrorCode.INVALID_CANDLE_RANGE)
         }
-    }
-
-    private companion object {
-        val SEOUL: ZoneId = ZoneId.of("Asia/Seoul")
-        val MAX_RANGE: Duration = Duration.ofDays(7)
     }
 }

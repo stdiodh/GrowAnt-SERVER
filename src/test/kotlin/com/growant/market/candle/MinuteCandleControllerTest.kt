@@ -5,8 +5,6 @@ import com.growant.common.config.JwtConfig
 import com.growant.common.config.SecurityConfig
 import com.growant.common.error.BusinessException
 import com.growant.common.error.ErrorCode
-import com.growant.market.candle.dto.MinuteCandleDto
-import com.growant.market.candle.dto.MinuteCandleSeriesDto
 import org.junit.jupiter.api.Test
 import org.mockito.BDDMockito.given
 import org.springframework.beans.factory.annotation.Autowired
@@ -17,7 +15,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import java.time.Instant
-import java.time.OffsetDateTime
+import java.time.ZoneId
 
 @WebMvcTest(MinuteCandleController::class)
 @Import(SecurityConfig::class, JwtConfig::class, ApiAuthEntryPoint::class)
@@ -30,19 +28,22 @@ class MinuteCandleControllerTest(@Autowired val mockMvc: MockMvc) {
         val from = Instant.parse("2026-08-10T00:00:00Z")
         val to = Instant.parse("2026-08-10T00:02:00Z")
         given(service.getCandles("005930", from, to)).willReturn(
-            MinuteCandleSeriesDto(
+            MinuteCandleSeries(
                 ticker = "005930",
+                zoneId = ZoneId.of("Asia/Seoul"),
                 candles = listOf(
-                    MinuteCandleDto(
-                        time = OffsetDateTime.parse("2026-08-10T09:00:00+09:00"),
+                    MinuteCandle(
+                        ticker = "005930",
+                        bucketStart = from,
                         open = 70_000,
                         high = 70_200,
                         low = 69_900,
                         close = 70_100,
                         volume = 1234,
                         tradeCount = 12,
-                        final = true,
+                        isFinal = true,
                         revision = 1,
+                        source = "test",
                     ),
                 ),
             ),

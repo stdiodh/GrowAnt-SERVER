@@ -1,6 +1,7 @@
 package com.growant.market.candle
 
-import com.growant.market.candle.persistence.MinuteCandleStore
+import com.growant.market.candle.port.MinuteCandleRepository
+import com.growant.market.candle.port.MinuteCandleSaveResult
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -11,8 +12,11 @@ import org.mockito.Mockito.verifyNoInteractions
 import java.time.Instant
 
 class MinuteCandleIngestionServiceTest {
-    private val store = mock(MinuteCandleStore::class.java)
-    private val service = MinuteCandleIngestionService(store, "test-feed")
+    private val repository = mock(MinuteCandleRepository::class.java)
+    private val service = MinuteCandleIngestionService(
+        repository,
+        MinuteCandlePolicy(CandleProperties(source = "test-feed")),
+    )
 
     @Test
     fun `keeps a forming candle out of PostgreSQL`() {
@@ -21,7 +25,16 @@ class MinuteCandleIngestionServiceTest {
         val snapshot = service.snapshots().single()
         assertThat(snapshot.close).isEqualTo(100)
         assertThat(snapshot.isFinal).isFalse()
-        verifyNoInteractions(store)
+        verifyNoInteractions(repository)
+    }
+
+    @Test
+    fun `exposes duplicate acceptance without changing the boolean compatibility method`() {
+        val tick = tick("2026-08-10T00:00:10Z", 100, 3, 1)
+
+        assertThat(service.acceptTick(tick)).isEqualTo(TickAcceptance.ACCEPTED)
+        assertThat(service.acceptTick(tick)).isEqualTo(TickAcceptance.DUPLICATE)
+        assertThat(service.accept(tick)).isFalse()
     }
 
     @Test
@@ -34,7 +47,7 @@ class MinuteCandleIngestionServiceTest {
         assertThat(finalized.close).isEqualTo(110)
         assertThat(finalized.volume).isEqualTo(8)
         assertThat(finalized.isFinal).isTrue()
-        verify(store).upsert(finalized)
+        verify(repository).save(finalized)
     }
 
     @Test
@@ -52,7 +65,7 @@ class MinuteCandleIngestionServiceTest {
             source = "test-feed",
         )
         service.accept(tick("2026-08-10T00:00:10Z", 100, 3, 1))
-        given(store.upsert(expected)).willThrow(IllegalStateException("store unavailable"))
+        given(repository.save(expected)).willThrow(IllegalStateException("store unavailable"))
 
         assertThatThrownBy { service.finalizeBefore(Instant.parse("2026-08-10T00:01:00Z")) }
             .isInstanceOf(IllegalStateException::class.java)
@@ -94,11 +107,64 @@ class MinuteCandleIngestionServiceTest {
             isFinal = true,
             source = "rest",
         )
-        given(store.upsert(corrected)).willReturn(1)
+        given(repository.save(corrected)).willReturn(MinuteCandleSaveResult.INSERTED_OR_UPDATED)
 
         assertThat(service.reconcile(corrected)).isEqualTo(1)
-        verify(store).upsert(corrected)
+        verify(repository).save(corrected)
     }
+
+    @Test
+    fun `keeps a conflicting candle pending and exposes the revision conflict`() {
+        val expected = MinuteCandle(
+            ticker = "005930",
+            bucketStart = Instant.parse("2026-08-10T00:00:00Z"),
+            open = 100,
+            high = 100,
+            low = 100,
+            close = 100,
+            volume = 3,
+            tradeCount = 1,
+            isFinal = true,
+            source = "test-feed",
+        )
+        service.accept(tick("2026-08-10T00:00:10Z", 100, 3, 1))
+        given(repository.save(expected)).willReturn(MinuteCandleSaveResult.REVISION_CONFLICT)
+
+        assertThatThrownBy { service.finalizeBefore(Instant.parse("2026-08-10T00:01:00Z")) }
+            .isInstanceOf(MinuteCandleRevisionConflictException::class.java)
+            .hasMessageContaining("ticker=005930")
+        assertThat(service.snapshots()).containsExactly(expected)
+    }
+
+    @Test
+    fun `persists later candles even when an earlier pending candle conflicts`() {
+        val first = finalCandle("2026-08-10T00:00:00Z", 100)
+        val second = finalCandle("2026-08-10T00:01:00Z", 110)
+        service.accept(tick("2026-08-10T00:00:10Z", 100, 1, 1))
+        service.accept(tick("2026-08-10T00:01:10Z", 110, 1, 2))
+        given(repository.save(first)).willReturn(MinuteCandleSaveResult.REVISION_CONFLICT)
+        given(repository.save(second)).willReturn(MinuteCandleSaveResult.INSERTED_OR_UPDATED)
+
+        assertThatThrownBy { service.finalizeBefore(Instant.parse("2026-08-10T00:02:00Z")) }
+            .isInstanceOf(MinuteCandleRevisionConflictException::class.java)
+
+        verify(repository).save(first)
+        verify(repository).save(second)
+        assertThat(service.snapshots()).containsExactly(first)
+    }
+
+    private fun finalCandle(bucketStart: String, price: Int) = MinuteCandle(
+        ticker = "005930",
+        bucketStart = Instant.parse(bucketStart),
+        open = price,
+        high = price,
+        low = price,
+        close = price,
+        volume = 1,
+        tradeCount = 1,
+        isFinal = true,
+        source = "test-feed",
+    )
 
     private fun tick(time: String, price: Int, quantity: Long, sequence: Long) = TradeTick(
         ticker = "005930",

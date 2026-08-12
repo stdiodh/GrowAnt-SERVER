@@ -31,8 +31,14 @@ server:
 market:
   provider: ${MARKET_PROVIDER:sim}
   candles:
+    source: ${MARKET_CANDLE_SOURCE:${MARKET_PROVIDER:sim}}
     # 라이선스가 확인된 공급자 또는 로컬 sim에서만 명시적으로 활성화한다.
     collection-enabled: ${MARKET_CANDLE_COLLECTION_ENABLED:false}
+    tracked-tickers: ${MARKET_CANDLE_TRACKED_TICKERS:005930,000660,035720,035420,005380}
+    finalization-delay: ${MARKET_CANDLE_FINALIZATION_DELAY:5s}
+    scheduler-interval: ${MARKET_CANDLE_SCHEDULER_INTERVAL:1s}
+    max-query-range: ${MARKET_CANDLE_MAX_QUERY_RANGE:7d}
+    zone-id: ${MARKET_CANDLE_ZONE_ID:Asia/Seoul}
 
 # 데모 로그인 JWT 서명 키(HS256, 32자=256bit 이상 필수) — 운영은 루트 .env의 JWT_SECRET. 스펙 §3.3
 auth:

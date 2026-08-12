@@ -1,11 +1,29 @@
 package com.growant.market.sim
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import kotlin.random.Random
 
 class SimulatedMarketDataProviderTest {
+    @Test
+    fun `rejects a second subscription for the same ticker`() {
+        val provider = SimulatedMarketDataProvider(Random(1))
+
+        try {
+            val subscription = provider.subscribe("005930") {}
+
+            assertThatThrownBy { provider.subscribe("005930") {} }
+                .isInstanceOf(IllegalStateException::class.java)
+                .hasMessage("Ticker is already subscribed: 005930")
+
+            subscription.close()
+        } finally {
+            provider.close()
+        }
+    }
+
     @Test
     fun `same random seed produces the same price sequence`() {
         val first = SimulatedMarketDataProvider(Random(20260810))

@@ -1,6 +1,7 @@
 package com.growant.market.sim
 
 import com.growant.market.port.MarketDataProvider
+import com.growant.market.port.Subscription
 import com.growant.market.port.Tick
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -57,8 +58,9 @@ class SimulatedMarketDataProvider internal constructor(
         return next
     }
 
-    override fun subscribe(ticker: String, onTick: (Tick) -> Unit) {
-        subscriptions.computeIfAbsent(ticker) {
+    override fun subscribe(ticker: String, onTick: (Tick) -> Unit): Subscription {
+        val scheduled = subscriptions.compute(ticker) { _, existing ->
+            check(existing == null) { "Ticker is already subscribed: $ticker" }
             scheduler.scheduleAtFixedRate(
                 {
                     try {
@@ -81,12 +83,13 @@ class SimulatedMarketDataProvider internal constructor(
                 1,
                 TimeUnit.SECONDS,
             )
+        }!!
+        return Subscription {
+            if (subscriptions.remove(ticker, scheduled)) {
+                scheduled.cancel(false)
+                last.remove(ticker)
+            }
         }
-    }
-
-    override fun unsubscribe(ticker: String) {
-        subscriptions.remove(ticker)?.cancel(false)
-        last.remove(ticker)
     }
 
     @PreDestroy

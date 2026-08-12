@@ -57,6 +57,18 @@ class MinuteCandleAggregatorTest {
     }
 
     @Test
+    fun `reports why a tick was not accepted`() {
+        val duplicate = tick(price = 100, occurredAt = "2026-08-09T00:00:10Z", sequence = 1)
+
+        assertThat(aggregator.acceptTick(duplicate)).isEqualTo(TickAcceptance.ACCEPTED)
+        assertThat(aggregator.acceptTick(duplicate)).isEqualTo(TickAcceptance.DUPLICATE)
+        aggregator.drainFinalized(Instant.parse("2026-08-09T00:01:00Z"))
+        assertThat(
+            aggregator.acceptTick(tick(price = 110, occurredAt = "2026-08-09T00:00:50Z", sequence = 2)),
+        ).isEqualTo(TickAcceptance.TOO_LATE)
+    }
+
+    @Test
     fun `uses event time and sequence as the duplicate identity`() {
         aggregator.accept(tick(price = 100, quantity = 3, occurredAt = "2026-08-09T00:00:10Z", sequence = 1))
 

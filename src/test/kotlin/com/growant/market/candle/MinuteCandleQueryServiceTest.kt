@@ -2,8 +2,8 @@ package com.growant.market.candle
 
 import com.growant.common.error.BusinessException
 import com.growant.common.error.ErrorCode
-import com.growant.market.MarketService
-import com.growant.market.candle.persistence.MinuteCandleStore
+import com.growant.market.candle.port.MinuteCandleRepository
+import com.growant.market.port.InstrumentCatalog
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -12,14 +12,15 @@ import org.mockito.Mockito.mock
 import java.time.Instant
 
 class MinuteCandleQueryServiceTest {
-    private val store = mock(MinuteCandleStore::class.java)
-    private val service = MinuteCandleQueryService(MarketService(), store)
+    private val repository = mock(MinuteCandleRepository::class.java)
+    private val catalog = InstrumentCatalog { ticker -> ticker in setOf("005930", "000270") }
+    private val service = MinuteCandleQueryService(catalog, repository)
 
     @Test
-    fun `returns one-minute candles in the shared response model`() {
+    fun `returns one-minute candles without depending on the web response model`() {
         val from = Instant.parse("2026-08-10T00:00:00Z")
         val to = Instant.parse("2026-08-10T00:02:00Z")
-        given(store.find("005930", from, to)).willReturn(
+        given(repository.find("005930", from, to)).willReturn(
             listOf(
                 MinuteCandle(
                     ticker = "005930",
@@ -40,11 +41,10 @@ class MinuteCandleQueryServiceTest {
         val result = service.getCandles("005930", from, to)
 
         assertThat(result.ticker).isEqualTo("005930")
-        assertThat(result.interval).isEqualTo("1m")
-        assertThat(result.timezone).isEqualTo("Asia/Seoul")
-        assertThat(result.candles.single().time.toString()).isEqualTo("2026-08-10T09:00+09:00")
+        assertThat(result.zoneId.id).isEqualTo("Asia/Seoul")
+        assertThat(result.candles.single().bucketStart).isEqualTo(from)
         assertThat(result.candles.single().close).isEqualTo(70_100)
-        assertThat(result.candles.single().final).isTrue()
+        assertThat(result.candles.single().isFinal).isTrue()
     }
 
     @Test

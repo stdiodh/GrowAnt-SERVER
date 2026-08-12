@@ -1,6 +1,8 @@
 package com.growant.market.candle.persistence
 
 import com.growant.market.candle.MinuteCandle
+import com.growant.market.candle.port.MinuteCandleRepository
+import com.growant.market.candle.port.MinuteCandleSaveResult
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
@@ -13,12 +15,36 @@ import java.time.ZoneOffset
 @Repository
 class MinuteCandleStore(
     private val jdbc: NamedParameterJdbcTemplate,
-) {
+) : MinuteCandleRepository {
     @Transactional
-    fun upsert(candle: MinuteCandle): Int = jdbc.update(UPSERT_SQL, candle.parameters())
+    override fun save(candle: MinuteCandle): MinuteCandleSaveResult {
+        val parameters = candle.parameters()
+        if (jdbc.update(SAVE_SQL, parameters) == 1) {
+            return MinuteCandleSaveResult.INSERTED_OR_UPDATED
+        }
+
+        val stored = jdbc.query(EXISTING_SQL, parameters) { resultSet, _ ->
+            resultSet.toMinuteCandle()
+        }.singleOrNull()
+
+        return when {
+            stored == candle -> MinuteCandleSaveResult.UNCHANGED
+            stored != null && stored.revision > candle.revision -> MinuteCandleSaveResult.STALE_REVISION
+            else -> MinuteCandleSaveResult.REVISION_CONFLICT
+        }
+    }
+
+    @Transactional
+    override fun upsert(candle: MinuteCandle): Int = when (save(candle)) {
+        MinuteCandleSaveResult.INSERTED_OR_UPDATED -> 1
+        MinuteCandleSaveResult.UNCHANGED,
+        MinuteCandleSaveResult.STALE_REVISION,
+        MinuteCandleSaveResult.REVISION_CONFLICT,
+        -> 0
+    }
 
     @Transactional(readOnly = true)
-    fun find(
+    override fun find(
         ticker: String,
         fromInclusive: Instant,
         toExclusive: Instant,
@@ -61,7 +87,7 @@ class MinuteCandleStore(
     private fun Instant.atUtc(): OffsetDateTime = atOffset(ZoneOffset.UTC)
 
     private companion object {
-        const val UPSERT_SQL = """
+        const val SAVE_SQL = """
             INSERT INTO minute_candles (
                 ticker,
                 bucket_start,
@@ -104,6 +130,24 @@ class MinuteCandleStore(
                 source_updated_at = EXCLUDED.source_updated_at,
                 updated_at = now()
             WHERE minute_candles.revision < EXCLUDED.revision
+        """
+
+        const val EXISTING_SQL = """
+            SELECT
+                ticker,
+                bucket_start,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                trade_count,
+                revision,
+                is_final,
+                source
+            FROM minute_candles
+            WHERE ticker = :ticker
+              AND bucket_start = :bucketStart
         """
 
         const val FIND_SQL = """

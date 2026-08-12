@@ -1,20 +1,25 @@
 package com.growant.market.candle
 
-import com.growant.market.MarketService
-import com.growant.market.port.MarketDataProvider
+import com.growant.market.port.InstrumentCatalog
+import com.growant.market.port.Subscription
 import com.growant.market.port.Tick
+import com.growant.market.port.TradeTickSource
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.mockito.BDDMockito.given
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
 import org.mockito.Mockito.verifyNoInteractions
 import java.math.BigDecimal
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 class MarketCandleCollectorTest {
     private val provider = RecordingProvider()
     private val ingestion = mock(MinuteCandleIngestionService::class.java)
-    private val collector = MarketCandleCollector(provider, MarketService(), ingestion)
+    private val catalog = InstrumentCatalog { it in CandleProperties.DEFAULT_TRACKED_TICKERS }
+    private val collector = MarketCandleCollector(provider, catalog, ingestion)
 
     @Test
     fun `subscribes the configured five catalog tickers once`() {
@@ -26,6 +31,14 @@ class MarketCandleCollectorTest {
 
     @Test
     fun `normalizes provider ticks before ingestion`() {
+        val expected = TradeTick(
+            ticker = "005930",
+            price = 70_100,
+            quantity = 25,
+            occurredAt = Instant.parse("2026-08-10T00:00:10Z"),
+            sequence = 7,
+        )
+        given(ingestion.acceptTick(expected)).willReturn(TickAcceptance.ACCEPTED)
         collector.start()
         provider.emit(
             Tick(
@@ -39,17 +52,9 @@ class MarketCandleCollectorTest {
         )
 
         val acceptedTick = mockingDetails(ingestion).invocations
-            .single { invocation -> invocation.method.name == "accept" }
+            .single { invocation -> invocation.method.name == "acceptTick" }
             .arguments.single() as TradeTick
-        assertThat(acceptedTick).isEqualTo(
-            TradeTick(
-                ticker = "005930",
-                price = 70_100,
-                quantity = 25,
-                occurredAt = Instant.parse("2026-08-10T00:00:10Z"),
-                sequence = 7,
-            ),
-        )
+        assertThat(acceptedTick).isEqualTo(expected)
     }
 
     @Test
@@ -76,34 +81,77 @@ class MarketCandleCollectorTest {
 
         collector.stop()
 
-        assertThat(provider.unsubscribed).containsExactlyElementsOf(provider.subscribed)
+        assertThat(provider.closed).containsExactlyElementsOf(provider.subscribed.asReversed())
     }
 
     @Test
-    fun `finalizes candles independently from incoming ticks`() {
-        collector.finalizeCompletedCandles()
+    fun `retries a subscription that failed to close`() {
+        collector.start()
+        provider.failCloseOnceFor = "035720"
+
+        collector.stop()
+        collector.stop()
+
+        assertThat(provider.closeAttempts.count { it == "035720" }).isEqualTo(2)
+        assertThat(provider.activeTickers()).isEmpty()
+    }
+
+    @Test
+    fun `finalizes candles using the configured delay and injected clock`() {
+        val now = Instant.parse("2026-08-10T00:01:05Z")
+        val fixedClock = Clock.fixed(now, ZoneOffset.UTC)
+        val configuredCollector = MarketCandleCollector(
+            provider,
+            catalog,
+            ingestion,
+            MinuteCandlePolicy(CandleProperties()),
+            fixedClock,
+        )
+
+        configuredCollector.finalizeCompletedCandles()
 
         assertThat(mockingDetails(ingestion).invocations)
             .anySatisfy { invocation ->
                 assertThat(invocation.method.name).isEqualTo("finalizeBefore")
-                assertThat(invocation.arguments.single()).isInstanceOf(Instant::class.java)
+                assertThat(invocation.arguments.single()).isEqualTo(Instant.parse("2026-08-10T00:01:00Z"))
             }
     }
 
-    private class RecordingProvider : MarketDataProvider {
+    @Test
+    fun `rolls back acquired subscriptions when one ticker fails and allows retry`() {
+        provider.failOnTicker = "035720"
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(collector::start)
+            .isInstanceOf(IllegalStateException::class.java)
+        assertThat(provider.closed).containsExactly("000660", "005930")
+
+        provider.failOnTicker = null
+        collector.start()
+
+        assertThat(provider.activeTickers()).containsExactlyInAnyOrderElementsOf(CandleProperties.DEFAULT_TRACKED_TICKERS)
+    }
+
+    private class RecordingProvider : TradeTickSource {
         val subscribed = mutableListOf<String>()
-        val unsubscribed = mutableListOf<String>()
+        val closed = mutableListOf<String>()
+        val closeAttempts = mutableListOf<String>()
+        var failOnTicker: String? = null
+        var failCloseOnceFor: String? = null
         private val callbacks = mutableMapOf<String, (Tick) -> Unit>()
 
-        override fun currentPrice(ticker: String): BigDecimal = BigDecimal.ONE
-
-        override fun subscribe(ticker: String, onTick: (Tick) -> Unit) {
+        override fun subscribe(ticker: String, onTick: (Tick) -> Unit): Subscription {
+            if (ticker == failOnTicker) throw IllegalStateException("subscription failed")
             subscribed += ticker
             callbacks[ticker] = onTick
-        }
-
-        override fun unsubscribe(ticker: String) {
-            unsubscribed += ticker
+            return Subscription {
+                closeAttempts += ticker
+                if (failCloseOnceFor == ticker) {
+                    failCloseOnceFor = null
+                    throw IllegalStateException("close failed")
+                }
+                closed += ticker
+                callbacks.remove(ticker)
+            }
         }
 
         fun emit(tick: Tick) {
@@ -113,5 +161,7 @@ class MarketCandleCollectorTest {
         fun emitFor(subscriptionTicker: String, tick: Tick) {
             checkNotNull(callbacks[subscriptionTicker]).invoke(tick)
         }
+
+        fun activeTickers(): List<String> = callbacks.keys.toList()
     }
 }

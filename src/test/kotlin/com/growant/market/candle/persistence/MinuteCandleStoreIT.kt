@@ -1,6 +1,7 @@
 package com.growant.market.candle.persistence
 
 import com.growant.market.candle.MinuteCandle
+import com.growant.market.candle.port.MinuteCandleSaveResult
 import com.growant.support.PostgresIntegrationTest
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -25,6 +26,21 @@ class MinuteCandleStoreIT(
 
         assertThat(store.find("005931", BASE_TIME, BASE_TIME.plusSeconds(60)))
             .containsExactly(candle)
+    }
+
+    @Test
+    fun `저장 결과는 동일 재처리와 revision 충돌을 구분한다`() {
+        val original = candle(ticker = "005937", bucketStart = BASE_TIME, revision = 1)
+
+        assertThat(store.save(original)).isEqualTo(MinuteCandleSaveResult.INSERTED_OR_UPDATED)
+        assertThat(store.save(original)).isEqualTo(MinuteCandleSaveResult.UNCHANGED)
+        assertThat(store.save(original.copy(close = 109, source = "conflicting-feed")))
+            .isEqualTo(MinuteCandleSaveResult.REVISION_CONFLICT)
+        assertThat(store.save(original.copy(revision = 0, source = "stale-feed")))
+            .isEqualTo(MinuteCandleSaveResult.STALE_REVISION)
+
+        assertThat(store.find("005937", BASE_TIME, BASE_TIME.plusSeconds(60)))
+            .containsExactly(original)
     }
 
     @Test

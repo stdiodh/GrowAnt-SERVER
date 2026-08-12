@@ -6,10 +6,18 @@ import java.math.BigDecimal
  * 시세 소스 포트(교체 지점).
  * 현재 구현: SimulatedMarketDataProvider (sim). 추후: KisMarketDataProvider (kis).
  */
-interface MarketDataProvider {
+interface MarketDataProvider : QuoteReader, TradeTickSource
+
+interface QuoteReader {
     fun currentPrice(ticker: String): BigDecimal
-    fun subscribe(ticker: String, onTick: (Tick) -> Unit)
-    fun unsubscribe(ticker: String)
+}
+
+interface TradeTickSource {
+    fun subscribe(ticker: String, onTick: (Tick) -> Unit): Subscription
+}
+
+fun interface Subscription : AutoCloseable {
+    override fun close()
 }
 
 data class Tick(

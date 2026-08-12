@@ -66,23 +66,25 @@ class MinuteCandleAggregator(
         require(source.isNotBlank()) { "source must not be blank" }
     }
 
-    fun accept(tick: TradeTick): Boolean {
+    fun accept(tick: TradeTick): Boolean = acceptTick(tick).accepted
+
+    fun acceptTick(tick: TradeTick): TickAcceptance {
         require(tick.ticker.isNotBlank()) { "ticker must not be blank" }
         require(tick.price > 0) { "price must be positive" }
         require(tick.quantity > 0) { "quantity must be positive" }
 
         val bucketStart = tick.occurredAt.truncatedTo(ChronoUnit.MINUTES)
         if (!bucketStart.plus(1, ChronoUnit.MINUTES).isAfter(finalizedBeforeExclusive)) {
-            return false
+            return TickAcceptance.TOO_LATE
         }
 
         val key = CandleKey(ticker = tick.ticker, bucketStart = bucketStart)
         val state = states[key]
         if (state == null) {
             states[key] = CandleState(tick)
-            return true
+            return TickAcceptance.ACCEPTED
         } else {
-            return state.add(tick)
+            return if (state.add(tick)) TickAcceptance.ACCEPTED else TickAcceptance.DUPLICATE
         }
     }
 

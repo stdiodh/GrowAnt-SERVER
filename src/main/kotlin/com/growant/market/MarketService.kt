@@ -4,12 +4,13 @@ import com.growant.common.error.BusinessException
 import com.growant.common.error.ErrorCode
 import com.growant.market.dto.MarketRowDto
 import com.growant.market.dto.StockDetailDto
+import com.growant.market.port.InstrumentCatalog
 import org.springframework.stereotype.Service
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
 @Service
-class MarketService {
+class MarketService : InstrumentCatalog {
     private val catalog: Map<String, MarketRowDto> = listOf(
         MarketRowDto("005930", "삼성전자", 76300, 5.97),
         MarketRowDto("000660", "SK하이닉스", 178500, 3.41),
@@ -22,6 +23,8 @@ class MarketService {
     ).associateBy { it.ticker }
 
     fun getMarket(): List<MarketRowDto> = catalog.values.toList()
+
+    override fun contains(ticker: String): Boolean = catalog.containsKey(ticker)
 
     fun getDetail(ticker: String): StockDetailDto {
         val row = catalog[ticker] ?: throw BusinessException(ErrorCode.INVALID_TICKER)
