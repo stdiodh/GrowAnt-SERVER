@@ -1,8 +1,8 @@
 # GrowAnt 1분봉 누적 연구 일지
 
 - 최초 작성일: 2026-08-11
-- 마지막 갱신일: 2026-08-11
-- 현재 단계: 과거 기준선 B0 복원, 테스트·집계·저장 부분 재현 감사 완료, B1 측정 규격 준비
+- 마지막 갱신일: 2026-08-12
+- 현재 단계: 과거 기준선 B0 복원, 분봉 구조 리팩터링 검증 완료, B1 증거 보존 구조 부분 완료
 - 범위: 국내 주식 5종목, KRX 정규장 1분봉, 차트 조회 전용
 
 이 문서는 1분봉을 수집하고 화면에 그리기까지 수행한 연구를 한곳에 계속 누적하는 기준 문서다. 현재 결론만 적는 보고서가 아니라, 무엇을 왜 시험했고 얼마나 좋아졌으며 어떤 대가가 생겼는지를 실패 기록까지 포함해 보존한다.
@@ -286,10 +286,10 @@ B0는 최초 비교점이다. 이후 결과가 더 좋아져도 이 표를 새 �
 중요한 증거 상태:
 
 - B0의 원본 build/reports/market-data 파일은 현재 남아 있지 않다.
-- build 디렉터리는 Git에서 제외되며 k6 wrapper도 매 실행 같은 JSON 이름을 덮어쓴다.
+- build 디렉터리는 Git에서 제외된다. 현재 도구는 `RUN_ID`별 디렉터리를 지원하지만 같은 ID를 다시 쓰면 기존 결과를 덮어쓴다.
 - 따라서 B0는 commit 58088568e555f2c9a1534bd60720fd1d1a1add24의 문서와 커밋된 요약 이미지로 복원한 과거 기준선이다.
 - 요약 이미지는 원시 터미널 파일이 아니라 결과를 읽기 좋게 다시 구성한 보조 증거다.
-- 다음 B1은 실행별 고유 파일명, 환경 MANIFEST, 데이터 checksum과 원본 요약을 함께 보존해야 한다.
+- 다음 B1은 매번 고유한 `RUN_ID`를 사용하고 환경 MANIFEST, 데이터 checksum과 원본 요약을 함께 보존해야 한다.
 
 ### 4.1 데이터 정확성 B0
 
@@ -462,7 +462,7 @@ KRX 정규장 390분, 연 252거래일, B0의 157.118B/봉이 선형으로 유�
 - 한계: 한 번의 큰 batch이며 운영의 분 경계 burst와 다르다. 테스트 자체는 테이블 전체가 benchmark 9,750행뿐인지 assert하지 않아 공유 컨테이너에서는 다른 page가 섞일 수 있다. replica, backup, bloat가 없다.
 - 결정: candle 전용 PostgreSQL 테이블을 B0로 유지. 파티션은 대규모 데이터에서 이득이 확인될 때만 검토.
 - 증거:
-  - [저장 측정 통합 테스트](../src/test/kotlin/com/growant/market/candle/persistence/MinuteCandleStorageMetricsIT.kt)
+  - [저장 측정 벤치마크](../src/test/kotlin/com/growant/market/candle/persistence/MinuteCandleStorageBenchmark.kt)
   - B0 원본은 유실됐다. build/reports/market-data/minute-candle-storage-benchmark.md는 가장 최근 실행이 덮어쓰는 파일이며 현재는 EXP-2026-W33-007 결과다.
 
 ### EXP-2026-W33-004: JSON gzip
@@ -531,7 +531,7 @@ KRX 정규장 390분, 연 252거래일, B0의 157.118B/봉이 선형으로 유�
   - PostgreSQL 통합 테스트 24개
   - 집계 warm-up 3회와 측정 7회
   - storage metrics 통합 테스트 단독 1회
-- 정확성:
+- 완료 기준(현재 미충족):
   - 단위·웹 55개, 실패 0
   - PostgreSQL 통합 24개, 실패 0
   - 집계 결과 매 회 1,950봉과 checksum 일치
@@ -612,7 +612,7 @@ KRX 정규장 390분, 연 252거래일, B0의 157.118B/봉이 선형으로 유�
 
 - gzip의 정확한 바이트를 다시 만드는 전용 명령과 원본 파일이 현재 없다.
 - 전체 ticker, 첫·마지막·중간 봉 삭제와 high + 1 오류 주입은 수행 기록이 있지만 현재 증거 스크립트가 자동 실행하지 않는다.
-- k6 결과는 항상 rest-candles-k6-summary.json을 덮어써 여러 실행을 개별 보존하지 못한다.
+- 당시 k6 결과는 항상 rest-candles-k6-summary.json을 덮어써 여러 실행을 개별 보존하지 못했다. 현재는 `RUN_ID`별 경로를 지원하지만 같은 ID 재사용 방지와 실행 조건 MANIFEST는 아직 없다.
 - build 보고서는 임시 산출물이어서 clean 후 사라진다.
 
 이 기록이 거짓이라는 뜻은 아니다. 현재 저장소만으로 동일 증거를 한 번에 다시 만들 수 없으므로 B0의 증거 신뢰도를 잠정으로 낮추고, B1 측정 도구의 첫 작업으로 자동화한다.
@@ -754,15 +754,21 @@ binary 형식은 JSON+gzip 대비 크기 또는 사용자 체감 시간이 25% �
 
 ### EXP-2026-W33-008: B1 증거 보존과 반복 기준선
 
-- 상태: 계획
+- 상태: 부분 완료
+- 날짜: 2026-08-12
 - 질문: clean 이후에도 사라지지 않고 다른 사람이 같은 조건으로 재현할 수 있는 기준선을 만들 수 있는가?
-- 기준: build 아래 고정 파일명을 덮어쓰고 문서·요약 이미지에만 숫자를 옮기는 현재 방식.
-- 후보:
-  - 실행 ID별 고유 디렉터리와 파일명
+- 기준: build 아래 고정 파일명을 덮어쓰고 문서·요약 이미지에만 숫자를 옮기던 방식.
+- 이번에 구현:
+  - 단위·웹 `unitTest`와 PostgreSQL `integrationTest` Gradle task 분리
+  - 집계·저장·k6 결과를 `build/reports/market-data/<RUN_ID>/`에 보존
+  - 일반 회귀 테스트에서 storage benchmark를 제외하고 전용 task로 분리
+  - `RUN_ID` 허용 문자 검증
+- 아직 필요:
+  - 같은 `RUN_ID` 재사용 거절
   - commit, dirty 여부, JDK, OS, Docker, PostgreSQL image digest, k6 버전 MANIFEST
-  - 데이터 행 수와 전체 필드 checksum
+  - 데이터 행 수와 전체 필드 checksum을 성능 결과에 연결
   - gzip identity·wire bytes 자동 측정
-  - k6 각 실행의 raw summary와 threshold 결과 개별 보존
+  - k6 입력 조건과 threshold 결과를 사람이 보지 않아도 추적 가능한 manifest
   - 오류 주입 시나리오의 실행·복구 자동화
 - 정확성:
   - 민감정보와 실제 원천 시세가 결과 파일에 없음
@@ -774,8 +780,11 @@ binary 형식은 JSON+gzip 대비 크기 또는 사용자 체감 시간이 25% �
   - storage metrics를 fresh targeted JVM에서 5회 실행
   - API 네 조건을 각각 5회 실행
   - A-B-A-B 비교가 가능한 파일 구조
+- 이번 관찰: `refactor-final`에서 집계 중앙 77.958ms·p95 103.720ms·중앙 25,013,348체결/초, 저장 157.118B/봉·177.035ms·55,074행/초를 기록했다. 5일·10 VU·10초 로컬 REST는 9,178요청, 오류 0%, p95 11.12ms였다.
+- 리팩터링 직전·직후 탐색 측정에서는 checksum 1,215,435,180이 같았고 중앙 처리량은 21,302,939→21,237,483체결/초로 0.3% 감소, p95 시간은 119.070→111.576ms로 6.3% 감소했다. 실행 편차 범위로 보고 성능 개선·회귀로 판정하지 않았다.
+- 한계: 이번 값은 서로 다른 후보를 A-B-A-B로 반복한 B1 성능 결론이 아니며, 로컬 한 번의 관찰이다. build 아래 결과는 `clean` 때 사라진다.
 - 완료 조건: 원본 결과부터 이 문서의 표까지 한 명령 흐름으로 만들고 링크 검사가 통과함.
-- 결정: 이 실험을 완료한 뒤 새 측정을 B1로 승격한다.
+- 결정: 보존 구조만 부분 채택한다. MANIFEST와 반복 기준을 완료한 뒤 새 측정을 B1로 승격한다.
 
 ### EXP-2026-W33-009: 최신 48개와 390개 조회 비교
 
@@ -980,26 +989,25 @@ BLOG_API_TO='2026-08-08T09:00:00+09:00' \
 집계 측정 도구 재실행. 결과는 역사 B0를 덮지 않고 새 EXP ID로 기록:
 
 ~~~bash
+RUN_ID='<unique-experiment-id>' \
 ./gradlew benchmarkMinuteCandles --rerun-tasks --no-build-cache
 ~~~
 
 저장 측정 도구 재실행. 결과는 역사 B0를 덮지 않고 새 EXP ID로 기록:
 
 ~~~bash
-./gradlew test \
-  --tests 'com.growant.market.candle.persistence.MinuteCandleStorageMetricsIT' \
-  --rerun-tasks \
-  --no-build-cache
+RUN_ID='<unique-experiment-id>' \
+./gradlew benchmarkMinuteCandleStorage --rerun-tasks --no-build-cache
 ~~~
 
 서버 회귀:
 
 ~~~bash
-./gradlew test --tests '*Test' --rerun-tasks --no-build-cache
-./gradlew test --tests '*IT' --rerun-tasks --no-build-cache
+./gradlew unitTest --rerun-tasks --no-build-cache
+./gradlew integrationTest --rerun-tasks --no-build-cache
 ~~~
 
-두 test 명령은 같은 build/reports/tests/test 경로를 덮어쓴다. B1에서는 실행 직후 단위·웹과 통합 결과를 서로 다른 증거 디렉터리로 복사하거나 별도 Gradle task로 분리한다.
+두 task는 `build/reports/tests/unitTest`와 `build/reports/tests/integrationTest`에 각각 결과를 남긴다. 이 디렉터리도 `clean` 때 삭제되므로 장기 증거에는 별도 보존이 필요하다.
 
 REST 부하 5일·100 VU 1회 예시:
 
@@ -1012,10 +1020,11 @@ TO=2026-08-10T00:00:00Z \
 MIN_CANDLES=1950 \
 VUS=100 \
 DURATION=20s \
+RUN_ID='<unique-experiment-id>' \
 ./scripts/market-candles-load.sh
 ~~~
 
-B0 표 전체를 다시 만들려면 1일·5일과 10·100 VU 네 조합을 각각 실행하고 5일·100 VU는 최소 3회 실행해야 한다. 현재 wrapper는 같은 rest-candles-k6-summary.json을 덮어쓰므로 각 실행 직후 고유 실행 ID로 보존하기 전에는 B1 증거가 되지 않는다.
+B0 표 전체를 다시 만들려면 1일·5일과 10·100 VU 네 조합을 각각 실행하고 5일·100 VU는 최소 3회 실행해야 한다. wrapper는 `RUN_ID`별 디렉터리를 지원하지만 같은 ID를 재사용하면 덮어쓰므로 매 실행마다 고유한 ID를 사용한다. 현재 summary JSON만으로는 ticker·기간·VU 같은 모든 입력을 완전히 추적할 수 없어 아직 B1 증거로 승격하지 않는다.
 
 보고서는 build/reports/market-data 아래에 생성된다. build 디렉터리는 장기 기록소가 아니므로 채택 결정을 뒷받침하는 결과는 민감정보를 제거한 뒤 별도 증거 파일로 보존한다.
 

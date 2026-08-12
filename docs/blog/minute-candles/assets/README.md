@@ -37,9 +37,9 @@
 3. 삼성전자 DB와 API의 1,950개 분봉에서 시간·OHLCV·체결 수·확정 여부·revision을 순서대로 전부 비교합니다.
 4. 종목별 연결·1분 간격 1,945/1,945쌍, 잘못된 OHLCV·가격 단위 위반 0건, 최대 2틱과 일별 이동 합계 0을 확인합니다.
 5. 한 ticker 전체와 첫·마지막·중간 봉 삭제, `high + 1` 훼손이 각각 실패하고 재적재 뒤 복구되는지 확인합니다.
-6. `MinuteCandleStorageMetricsIT`와 `benchmarkMinuteCandles`를 각각 실행합니다.
+6. `benchmarkMinuteCandleStorage`와 `benchmarkMinuteCandles`를 각각 실행합니다.
 7. 1일·5일을 10·100 VU로 나누어 k6를 20초 실행합니다. 5일·100 VU는 세 번 독립 실행합니다.
-8. 서버 `*Test` 55개와 `*IT` 24개, Flutter 테스트 62개와 정적 분석 결과를 확인합니다.
+8. 캡처 당시 서버 `*Test` 55개와 `*IT` 24개, Flutter 테스트 62개와 정적 분석 결과를 확인했습니다. 새 캡처는 현재 테스트 개수를 다시 기록합니다.
 9. 새 결과가 본문과 다르면 이미지뿐 아니라 표, 캡션, 해설도 함께 갱신합니다.
 
 ## 화면과 API의 값 대조

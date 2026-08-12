@@ -237,7 +237,7 @@ BLOG_API_TO='2026-08-08T09:00:00+09:00' \
 PostgreSQL 저장 크기와 batch 처리량:
 
 ```bash
-./gradlew test --tests 'com.growant.market.candle.persistence.MinuteCandleStorageMetricsIT'
+./gradlew benchmarkMinuteCandleStorage
 ```
 
 REST 부하:

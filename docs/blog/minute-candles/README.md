@@ -456,7 +456,7 @@ VU 100을 실제 사용자 100명과 같다고 볼 수는 없습니다. 실제 �
 - `./gradlew test --tests '*Test'`
 - `./gradlew test --tests '*IT'`
 - `./gradlew benchmarkMinuteCandles`
-- `MinuteCandleStorageMetricsIT`의 크기 측정
+- `./gradlew benchmarkMinuteCandleStorage`
 - `blog-market-candles-evidence.sh`의 장중 연속성·1분 간격·OHLCV 검사
 - 1일·5거래일 gzip 응답 크기 측정
 - 1일·5일, 10·100 VU 조합의 20초 k6 실행
