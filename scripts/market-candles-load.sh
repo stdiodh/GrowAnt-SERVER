@@ -17,6 +17,14 @@ fi
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 report_directory="${repository_root}/build/reports/market-data"
 
+if [[ -n "${RUN_ID:-}" ]]; then
+    if [[ ! "${RUN_ID}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        echo "RUN_ID may contain only letters, numbers, '.', '_' and '-'" >&2
+        exit 2
+    fi
+    report_directory="${report_directory}/${RUN_ID}"
+fi
+
 mkdir -p "${report_directory}"
 
 cd "${repository_root}"

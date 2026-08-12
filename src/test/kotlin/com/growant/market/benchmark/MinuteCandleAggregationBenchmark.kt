@@ -114,6 +114,7 @@ object MinuteCandleAggregationBenchmark {
         return buildString {
             appendLine("# Minute Candle Aggregation Benchmark")
             appendLine()
+            configuration.runId?.let { appendLine("- Run ID: $it") }
             appendLine(
                 "- Dataset: ${tickers.size} tickers × $marketMinutes minutes × " +
                     "${configuration.ticksPerMinute} ticks/minute/ticker",
@@ -172,6 +173,7 @@ object MinuteCandleAggregationBenchmark {
         val warmupRounds: Int,
         val measurementRounds: Int,
         val output: Path,
+        val runId: String?,
     ) {
         companion object {
             fun parse(args: Array<String>): Configuration {
@@ -190,6 +192,7 @@ object MinuteCandleAggregationBenchmark {
                         options["output"]
                             ?: "build/reports/market-data/minute-candle-aggregation-benchmark.md",
                     ),
+                    runId = options["run-id"],
                 )
             }
 

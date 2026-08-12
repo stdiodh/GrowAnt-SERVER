@@ -15,7 +15,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Locale
 
-class MinuteCandleStorageMetricsIT(
+class MinuteCandleStorageBenchmark(
     @Autowired val jdbc: NamedParameterJdbcTemplate,
 ) : PostgresIntegrationTest() {
     @Test
@@ -122,6 +122,7 @@ class MinuteCandleStorageMetricsIT(
             appendLine("# Minute Candle Storage Benchmark")
             appendLine()
             appendLine("- Generated at: ${Instant.now()}")
+            BENCHMARK_RUN_ID?.let { appendLine("- Run ID: $it") }
             appendLine("- PostgreSQL: $postgresVersion")
             appendLine("- Dataset: ${TICKERS.size} tickers × $MINUTES_PER_DAY minutes × $TRADING_DAYS days")
             appendLine("- Rows: ${integerFormat.format(rowCount)}")
@@ -160,10 +161,13 @@ class MinuteCandleStorageMetricsIT(
     private companion object {
         val TICKERS = listOf("990001", "990002", "990003", "990004", "990005")
         val MARKET_OPEN: Instant = Instant.parse("2026-08-03T00:00:00Z")
-        val REPORT_PATH: Path = Path.of(
-            System.getProperty("user.dir"),
-            "build/reports/market-data/minute-candle-storage-benchmark.md",
-        )
+        val BENCHMARK_RUN_ID: String? = System.getProperty("marketBenchmarkRunId")
+        val REPORT_PATH: Path = System.getProperty("marketBenchmarkReport")
+            ?.let(Path::of)
+            ?: Path.of(
+                System.getProperty("user.dir"),
+                "build/reports/market-data/minute-candle-storage-benchmark.md",
+            )
 
         const val MINUTES_PER_DAY = 390
         const val TRADING_DAYS = 5
