@@ -2,6 +2,8 @@
 
 GrowAnt의 Kotlin/Spring Boot 백엔드 서버입니다.
 
+분봉 기능을 수정하거나 새 시세 공급자를 연결할 때는 [1분봉 개발 가이드](docs/market-minute-candle-development.md)를 먼저 확인합니다.
+
 ## 필수 협업 규칙
 
 > 이 절은 저장소의 브랜치, 커밋, Pull Request(PR), 검증 절차에 대한 단일 기준입니다.
@@ -164,7 +166,7 @@ PR 본문에는 다음 내용을 반드시 포함합니다.
 
 ### CI 필수 검사 계획
 
-현재 저장소에는 GitHub Actions workflow가 없고 Gradle의 단일 `test` task에 테스트가 섞여 있습니다. 아래 항목은 도입할 목표 상태이며, workflow와 GitHub Ruleset이 추가되기 전까지 자동으로 강제되지 않습니다.
+현재 저장소에는 GitHub Actions workflow가 없습니다. Gradle에는 `unitTest`와 `integrationTest`가 분리되어 있지만, 아래 workflow와 GitHub Ruleset이 추가되기 전까지 원격에서 자동으로 강제되지는 않습니다.
 
 테스트 파일 이름은 다음 규칙으로 구분합니다.
 
@@ -176,8 +178,8 @@ PR 본문에는 다음 내용을 반드시 포함합니다.
 | 필수 check | `develop` PR | `main` PR | 검증 내용 |
 | --- | :---: | :---: | --- |
 | `source-branch-policy` | O | O | `develop`에는 `feature/*`, `main`에는 `develop`만 들어오는지 검사 |
-| `unit-web-tests` | O | O | `./gradlew test --tests '*Test'` |
-| `postgres-integration-tests` | O | O | Docker 환경에서 `./gradlew test --tests '*IT'` |
+| `unit-web-tests` | O | O | `./gradlew unitTest` |
+| `postgres-integration-tests` | O | O | Docker 환경에서 `./gradlew integrationTest` |
 | `package` | O | O | Java 21에서 `./gradlew clean bootJar` 및 `build/libs/*.jar` 생성 확인 |
 | `container-smoke` | O | O | Compose build·기동 후 Nginx를 통한 로그인 API와 응답 계약 확인 |
 
@@ -187,8 +189,8 @@ PR 본문에는 다음 내용을 반드시 포함합니다.
 
 CI 구현 시 다음 순서로 보강합니다.
 
-1. 초기 workflow에서는 현재 명명 규칙을 이용해 `*Test`와 `*IT`를 분리 실행합니다.
-2. `build.gradle.kts`에 독립된 `unitTest`와 `integrationTest` task를 추가해 이름 필터를 빌드 설정 한 곳에서 관리합니다. 이름 의존을 완전히 없앨 때는 `src/integrationTest` source set 또는 JUnit tag로 분리합니다.
+1. 현재 `unitTest`와 `integrationTest` task를 각각 독립 job으로 실행합니다.
+2. 이름 의존을 완전히 없앨 필요가 생기면 `src/integrationTest` source set 또는 JUnit tag로 분리합니다.
 3. `container-smoke`는 고유한 `COMPOSE_PROJECT_NAME`으로 PostgreSQL·Redis·서버·Nginx를 빌드하고 기동합니다.
 4. 준비 지연을 고려해 제한 시간 동안 `http://127.0.0.1/api/auth/login`을 재시도합니다. `Content-Type: application/json`과 `{"provider":"kakao","nickname":"ci-smoke"}`를 보내 `2xx`, `success=true`, 비어 있지 않은 `data.token`을 모두 확인합니다.
 5. 실패하면 backend, PostgreSQL, Nginx 로그를 남기고, 성공·실패와 관계없이 해당 CI project만 `docker compose down --volumes --remove-orphans`로 정리합니다.
