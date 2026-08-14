@@ -1,17 +1,19 @@
 # 1분봉 수집·저장·조회 MVP 및 성능 검증
 
-작성일: 2026-08-11
+작성일: 2026-08-11, B1 부하 재검증 반영: 2026-08-14
+
+시세 공급자 공식 문서 재확인일: 2026-08-14
 
 대상 범위: 국내 주식 5종목, KRX 정규장 1분봉, 차트 조회 전용
 
 ## 1. 결론
 
 - 5종목의 1분봉 집계와 PostgreSQL 저장 자체는 현재 MVP 규모에서 병목이 아니다.
-- 실제 병목 후보는 긴 조회 구간의 JSON 직렬화와 네트워크 전송이다. JSON 압축으로 5거래일 응답을 282,858B에서 24,230B로 91.4% 줄였다.
-- 로컬 단일 서버에서 100 VU로 조회했을 때 1일 p95는 45.791ms였다. 5거래일은 세 번 모두 p95 200ms 기준을 통과했고 중앙값은 154.312ms였지만, 가장 느린 실행은 p95 196.651ms와 p99 337.026ms로 임계선에 가까웠다. 따라서 클라이언트는 첫 화면의 전송량과 밀도를 줄이기 위해 가장 최근 거래일만 조회한다.
+- 긴 조회 구간에서 포화 신호가 보였다. JSON 압축으로 5거래일 응답을 282,858B에서 24,230B로 91.4% 줄였지만, B1은 CPU·gzip·Hikari·DB·부하 발생기 중 원인을 구분할 지표를 수집하지 않았다.
+- B0에서 임계선에 가까웠던 5거래일·100 VU를 다시 확인하기 위해 B1에서 네 조건을 각 3회 실행했다. B1 중앙값은 1일·100 VU p95 66.079ms로 통과했지만, 5거래일·100 VU p95 203.918ms로 세 번 모두 실패했다. 5거래일은 10→100 VU에서 처리량이 525.71→517.81요청/초로 늘지 않고 p95만 약 10.7배 증가했다. 따라서 첫 화면은 최근 거래일만 조회하고 과거 추가 로딩은 다음 클라이언트 변경으로 구현한다.
 - 처음 만든 로컬 시드는 각 분의 시가를 따로 계산해 삼성전자 하루 기준 다음 시가와 이전 종가의 평균 차이가 187.61원, 최대 차이가 740원이었다. 새 교육용 시드는 장중 9,725쌍 모두 다음 시가를 이전 종가와 같게 만들고 거래일 경계에서만 -2틱에서 +2틱의 갭을 허용한다. 종목별 가격 단위가 달라 원화 범위는 전체 -1,000원에서 +1,000원이다.
 - 공개 서비스 전에 가장 먼저 해결할 항목은 기술이 아니라 시세 표시·재배포 권리다. 증권사 개인 API로 받은 시세를 여러 사용자에게 표시할 수 있다고 가정하면 안 된다.
-- 이번 변경은 로컬 `sim` 공급자로 수집 파이프라인을 검증한다. KIS·키움·LS 실데이터 속도 비교는 계정, API 키, 서면 사용 허가를 확보한 뒤 같은 측정 규격으로 실행해야 한다.
+- 현재 검증은 `sim → 수집·집계 → PostgreSQL` 계층과 `결정적 seed → PostgreSQL → REST → Flutter` 경로로 나뉜다. 같은 실제 공급자 데이터가 전체를 관통한 E2E는 아니다. 첫 실제 공급자 구현 대상은 KIS WebSocket + REST로 정하고, 토스 REST 1분봉은 화면 연결용 비교 실험으로 분리한다. KIS·키움·토스·LS 실데이터 비교는 계정, API 키, 서면 사용 허가를 확보한 뒤 같은 측정 규격으로 실행해야 한다.
 
 ## 2. 이번 MVP에서 구현한 범위
 
@@ -21,11 +23,12 @@
 flowchart LR
     P["시세 공급자<br/>현재: sim"] --> C["서버 단일 구독<br/>5종목"]
     C --> A["UTC 이벤트 시각 기준<br/>1분 OHLCV 집계"]
-    A -->|"종료 + 5초"| D[("PostgreSQL<br/>minute_candles")]
-    D --> R["인증 REST<br/>최대 7일"]
-    R --> G["gzip JSON"]
+    A -->|"종료 후 최소 5초<br/>1초 scheduler"| D[("PostgreSQL<br/>minute_candles")]
+    D --> Q["인증 REST<br/>최대 7일"]
+    Q --> G["gzip JSON"]
     G --> U["차트 클라이언트"]
-    B["공급자 REST 백필/대조<br/>후속 구현"] -.-> A
+    B["공급자 REST 백필/대조<br/>후속 구현"] -.-> RC["복구 coordinator<br/>revision 대조"]
+    RC -.-> D
     A -.-> W["WebSocket 현재 봉 배포<br/>후속 구현"]
 ```
 
@@ -34,7 +37,7 @@ flowchart LR
 - 체결 시각과 sequence를 이용한 UTC 1분 경계 집계
 - 역순 체결에서도 open/close를 이벤트 순서대로 결정하고 high/low/volume/tradeCount 집계
 - 동일 `(occurredAt, sequence)` 체결 중복 제거. 실제 공급자 adapter는 이벤트마다 고유한 sequence를 제공해야 함
-- 마지막 체결 유무와 무관한 1초 주기 확정, 종료 후 5초 지연 허용
+- 마지막 체결 유무와 무관하게 `now - 5초` watermark를 1초마다 검사한다. 일반적인 최초 확정 시점은 분 종료 후 약 5~6초다.
 - 확정 경계보다 늦은 체결 거절 및 DB 실패 시 메모리 봉 보존
 - `(ticker, bucket_start)` 복합 기본키와 revision 기반 멱등 upsert
 - 인증된 1분봉 기간 조회 API와 7일 상한
@@ -49,10 +52,12 @@ flowchart LR
 
 ### 3.1 권리 확인이 Gate 0인 이유
 
-한국투자증권은 개인 시세를 본인 투자 목적에 한정하고 제3자 제공을 금지하며, 앱·웹 표시에는 제휴 및 거래소 시세 계약이 필요하다고 안내한다. KRX도 재배포·프로그램 개발·수익사업에 별도 계약과 승인을 요구한다.
+한국투자증권과 키움증권은 개인 시세를 개인 업무에 한정하고 제3자 제공을 금지한다. 토스증권의 공개 이용 안내도 본인 매매 목적만 허용하며 외부 배포·상업적 이용을 금지한다. KRX는 재배포·프로그램 개발·수익사업에 별도 계약과 승인을 요구한다.
 
 - [한국투자증권 Open API 이용 대상과 시세 제한](https://apiportal.koreainvestment.com/about-open-api)
 - [한국투자증권 제휴 안내](https://apiportal.koreainvestment.com/provider-info)
+- [키움 Open API 서비스 이용약관](https://download.kiwoom.com/deploy/AG001/pdf/AG001_110_20260601.pdf)
+- [토스증권 Open API 이용 안내](https://home.tossinvest.com/ko/open-api)
 - [KRX 정보 이용 계약 절차](https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA003.jsp)
 - [KRX 데이터 라이선스 안내](https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA004.jsp)
 
@@ -67,34 +72,99 @@ flowchart LR
 
 ### 3.2 기술 후보
 
-| 후보 | 실시간·백필 방식 | 공개 문서상 주요 제한 | 이번 판단 |
+| 후보 | 1분봉 취득 방식 | 공개 문서상 주요 제한 | 이번 판단 |
 | --- | --- | --- | --- |
-| 한국투자 KIS | 체결 WebSocket + 당일/과거 분봉 REST | 실전 REST 초당 제한과 WebSocket 등록 제한이 공개되어 비교적 투명함 | 내부 POC 1순위, 공개 사용은 계약 후 |
-| 키움 REST API | 체결 WebSocket + `ka10080` 분봉 REST | 계좌·토큰 단위 호출 제한, 실시간 종목 상한 | 내부 비교군, 서면 허가 필요 |
-| LS OPEN API | 체결 WebSocket + `t8412` N분 차트 REST | `t8412` 개인 초당 제한, 예제 조회량이 큼 | 백필 비교군, 서면 허가 필요 |
-| KRX 무료 OPEN API | 일별 REST | 실시간·1분봉이 아니며 비상업·제3자 제공 제한 | 정합성 보조만 가능 |
+| 한국투자 KIS | `H0STCNT0` 체결 WebSocket 집계 + 당일·과거 분봉 REST | 신규 실전 첫 3일 3 TPS 후 18 TPS, 모의 1 TPS, WebSocket 합산 41개 등록. 일별 분봉은 실전 전용이며 최대 120봉/호출·1년 | **첫 실제 공급자 어댑터**, 공개 사용은 계약 후 |
+| 키움 REST API | `0B` 체결 WebSocket + `ka10080` 주식분봉 REST | 국내 조회 5 TPS, 토큰당 한 세션, 실시간 200종목. 보관기간·페이지 크기 수치는 공개 문서에 없음 | 종목 수 확장 비교군, 제3자 제공은 약관상 금지 |
+| 토스증권 Open API | `/api/v1/candles?interval=1m` REST | 최대 200봉/호출, 차트 그룹 20 TPS. 현재 공식 운영 명세는 REST-only이며 보관기간·명시적 확정 상태·체결 수가 없음 | 화면용 공급자 집계 봉 비교 실험, 운영 원본은 아님 |
+| LS OPEN API | 체결 WebSocket + `t8412`·`t8452` N분 차트 REST | 공개 상세에서 확인한 `t8412` 1 TPS | 저속 백필 비교군, 권리 확인 필요 |
 | KRX/코스콤 정식 피드 | 계약된 실시간 시장 데이터 | 계약, KRX 승인, 비용·리드타임 필요 | 공개 운영의 명확한 경로 |
-| 해외 범용 API | 상품별 REST/스트림 | 한국 시장은 EOD 또는 지연인 경우가 많음 | 한국 실시간 MVP 기본축에서 제외 |
+
+KIS와 LS의 해당 시세 API는 공식 상세에서 무과금으로 표시된다. 키움은 매매 시 HTS와 같은 수수료를 적용한다고 안내하고, 토스도 계좌 고객용 서비스로 기존 수수료를 안내한다. 이는 API 이용 비용에 대한 설명일 뿐 시세 표시·재배포 권리를 의미하지 않는다.
+
+무료 공공 API는 별도로 분류한다. 호출 한도보다 먼저 데이터 시간 단위를 확인해야 한다.
+
+| 후보 | 실제 데이터와 갱신 | 공개 호출 한도 | 1분봉 판단 |
+| --- | --- | --- | --- |
+| 금융위원회 주식시세정보 | 일별 OHLCV, 일 1회, 기준일 다음 영업일 13시 이후 | 개발계정 10,000회/일 | 1분봉·실시간 체결 없음 |
+| KRX 무료 OPEN API | 주식 일별매매정보, 당일·장중·실시간 미제공 | 키당 10,000회/일 | 1분봉 없음. 일봉 참고만 가능 |
+| OpenDART | 공시·기업 개황·재무정보, 가격·체결·OHLCV 미제공 | 일반적으로 20,000건 이상에서 제한 오류가 날 수 있으나 공개 가이드에 시간 단위 미기재 | 분봉 원천이 아니라 공시 이벤트 보강용 |
+
+공공 API는 수 분 지연된 1분봉 대안이 아니다. 이번에 확인한 세 API는 1분봉 자체가 없으며, 일별 OHLCV로 장중 390개 봉을 복원할 수 없다.
+
+이번 공식 문서 조사 범위는 증권사 4개와 공공 API 3개다. 계좌 없이 누구나 쓰는 무료 공개 API 중 국내주식 실시간 체결 또는 1분봉을 제공한 것은 0개였고, 계좌·앱 신청 후 기술적으로 1분봉을 만들거나 읽을 후보는 4개였다. 이는 전체 시장의 완전한 목록이나 공개 재배포 허가 수를 뜻하지 않는다.
 
 공식 자료:
 
 - [KIS API 서비스 목록](https://apiportal.koreainvestment.com/apiservice-apiservice)
 - [KIS 과거 분봉 공식 예제](https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/domestic_stock/inquire_time_dailychartprice/inquire_time_dailychartprice.py)
-- [키움 API 가이드](https://openapi.kiwoom.com/m/guide/apiguide)
+- [KIS REST·WebSocket 유량 공지](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989)
+- [KIS 신규 신청 유량 공지](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/c1113824-17c7-47a7-b7b8-8880506a847c)
+- [키움 `ka10080` 주식분봉 가이드](https://openapi.kiwoom.com/guide/apiguide?apiId=ka10080&jobTp=FS_JOB_TP&jobTpCode=07)
+- [키움 Open API 서비스 이용약관](https://download.kiwoom.com/deploy/AG001/pdf/AG001_110_20260601.pdf)
+- [토스 Open API 현재 기능·호출 한도](https://openapi.tossinvest.com/openapi-docs/overview.md)
+- [토스 캔들 API 명세](https://openapi.tossinvest.com/openapi-docs/latest/api-reference/Apis/MarketDataApi.md#getCandles)
+- [토스 API 이용 범위](https://home.tossinvest.com/ko/open-api)
 - [LS N분 차트 API](https://openapi.ls-sec.co.kr/apiservice?api_id=12320341-ad85-429a-90bd-5b3771c5e89f&group_id=73142d9f-1983-48d2-8543-89b75535d34c)
+- [금융위원회 주식시세정보](https://www.data.go.kr/data/15094808/openapi.do)
+- [KRX 무료 OPEN API 서비스 목록](https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd)
+- [OpenDART API 목록](https://opendart.fss.or.kr/intro/infoApiList.do)
 - [KRX 정식 데이터 상품](https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA002.jsp)
 
-이번 로컬 측정값을 KIS·키움·LS의 실제 속도로 해석하면 안 된다. 세 공급자는 자격 증명과 재표시 허가가 없어 아직 실측하지 않았다.
+이번 로컬 측정값을 KIS·키움·토스·LS의 실제 속도로 해석하면 안 된다. 네 공급자는 자격 증명과 재표시 허가가 없어 아직 실측하지 않았다.
+
+### 3.3 채택 결정
+
+선택은 목적별로 나눈다.
+
+| 목적 | 선택 | 이유 |
+| --- | --- | --- |
+| GrowAnt 첫 실제 수집 어댑터 | **KIS WebSocket + REST** | 기존 `MarketDataProvider`의 `TradeTickSource` 경계에 실제 체결을 연결할 수 있고, 실시간 집계와 REST gap 복구를 같은 공급자로 검증할 수 있음. 현재 5종목은 41개 등록 한도 안에 있음 |
+| 가장 빠른 화면용 1분봉 실험 | **토스 REST** | 공급자가 집계한 1분 OHLCV를 최대 200봉씩 바로 조회할 수 있어 tick 집계 없이 화면 연결 가능. 명시적인 확정 여부는 없음 |
+| 41종목을 넘는 내부 실시간 비교 | **키움** | 공개 문서상 한 세션에서 실시간 200종목을 지원 |
+| 공개 다중 사용자 운영 | **아직 미선정** | 무료 개인 API의 외부 표시·재배포 권리가 없거나 확인되지 않았으므로 정식 시세 계약이 Gate 0 |
+
+토스 REST를 GrowAnt의 운영 원본으로 바로 채택하지 않는 이유는 현재 도메인과 응답 의미가 다르기 때문이다. 토스 캔들은 OHLCV는 주지만 `tradeCount`와 명시적인 `isFinal`은 주지 않는다. 현재 `MinuteCandle`과 API는 두 값을 요구하므로 알 수 없는 값을 `0`·`true`로 만들지 않는다. 토스 경로를 영속화하려면 V2 migration을 수정하지 않고 nullable 값 또는 별도 품질 상태를 표현하는 V3 migration과 호환 정책을 먼저 설계한다.
+
+KIS REST로 복구한 봉에는 체결 수가 없을 수 있다. WebSocket 집계 봉의 체결 수를 유지할지, 미확인 상태를 별도로 표현할지 같은 정책을 실제 adapter 구현 전에 확정한다.
+
+### 3.4 GrowAnt 적용 설계
+
+```mermaid
+flowchart LR
+    KWS["KIS H0STCNT0<br/>실시간 체결"] --> KA["KIS MarketDataProvider<br/>공급자 시각·식별자 변환"]
+    KA --> C["기존 collector·aggregator"]
+    KREST["KIS 분봉 REST<br/>시작·재연결 gap"] --> R["복구·대조 coordinator"]
+    C --> R
+    R --> DB[("PostgreSQL<br/>revision upsert")]
+    DB --> API["기존 JWT candles API"]
+    TREST["토스 1분봉 REST"] -. "가짜 tick으로 변환하지 않음" .-> TP["별도 화면 비교 projection<br/>canonical 저장 보류"]
+```
+
+구현 순서는 다음과 같다.
+
+1. **권리·시장 의미 고정:** KRX 정규장, 1분, 현재 5종목만 허용하고 표시·저장·재배포 권리를 서면 확인한다.
+2. **KIS 실시간 adapter:** `com.growant.market.kis`에 `KisMarketDataProvider : MarketDataProvider`를 추가하고 `market.provider=kis`에서만 bean을 만든다. 하나의 물리 WebSocket에서 5종목을 multiplex하고 등록 ACK, heartbeat, 토큰 갱신과 구독 해제를 관리한다. 재연결 전후까지 유효한 체결 식별자를 공급자 필드에서 입증하지 못하면 서버 도착 순번을 임의로 `sequence`에 넣지 않고 중복 모델부터 확장한다.
+3. **공급자 중립 REST port:** 공급자가 집계한 분봉을 읽는 `HistoricalMinuteCandleSource`와 복구 상태를 관리하는 coordinator를 추가한다. KIS와 토스 REST client가 이 port를 구현하며, 토스 분봉을 가짜 `Tick`으로 분해하지 않는다.
+4. **gap 복구:** 시작·재연결 시 DB의 마지막 확정 봉보다 1분 앞에서 가장 최근에 끝난 분까지 조회한다. 조회 중 WebSocket tick은 버퍼링한다. REST가 덮는 지난 bucket은 보정 후보로 먼저 reconcile하고, 그 경계 뒤의 tick만 event-time 순서로 집계기에 풀어준다. 연결이 끊겼던 현재 bucket은 `dirty`로 표시해 종료 뒤 REST로 다시 확인하기 전에는 완전한 봉으로 취급하지 않는다. 공급자 집계 봉과 원시 tick을 같은 목록으로 합치지 않으며, 경계가 겹치는 공급자 봉은 더 높은 revision으로 대조한다.
+5. **단일 writer:** 초기 운영은 수집 전용 worker 한 대만 사용한다. API replica와 사용자 수가 WebSocket 연결이나 토스 polling 횟수를 늘리지 않게 한다.
+6. **관측·실패 처리:** 429 `Retry-After`, 제한된 지수 backoff와 jitter, heartbeat timeout, 인증 갱신, 종목별 마지막 tick·확정 봉·gap, pending과 revision conflict를 지표로 남긴다. 일시적 DB 장애만 backoff 재시도하고, 동일 데이터는 성공, 낮은 revision은 무시와 지표 기록, 같은 revision·다른 값은 quarantine·알림 후 자동 재시도를 중단한다. 현재 SQL의 `source_updated_at=now()`는 수집 시각이므로 V3에서 `ingested_at`으로 이름을 바로잡거나 공급자 원천 갱신 시각과 분리한다.
+7. **검증:** payload mapping, 동일 시각 순서, 중복, 부분 구독 실패, idempotent close, 재연결, REST/WS 경계 중복, 429·401을 자동 테스트한다. fake REST/WS와 PostgreSQL 통합 테스트에서 `WS → 강제 단절 → REST gap → 재접속 → DB 보정 → JWT API`를 관통한다. 이후 실제 5종목 한 거래일과 8시간 soak를 별도 수행한다.
+
+토스 화면 실험은 OAuth client id·secret을 배포 secret으로 관리하고 서버의 고정 outbound IP를 허용 목록에 등록한 뒤, 중앙 collector가 최신 2개 봉을 5초 주기로 조회하는 것으로 시작할 수 있다. 5종목을 1초 간격 round-robin으로 분산하면 평균·순간 모두 1 TPS이고, 한꺼번에 보내면 순간 5 TPS다. 둘 다 현재 차트 그룹 20 TPS보다 낮지만 scheduler 정책에 순간값을 명시한다. 완료된 이전 봉을 다시 확인하고 `before`의 포함 경계에서 페이지 중복을 제거하며, `adjusted=false`로 원시 가격 의미를 고정한다. 실제 한도는 `X-RateLimit-*`와 429의 `Retry-After`를 따른다. canonical DB 저장은 `tradeCount`·확정 의미와 V3 호환 정책을 정한 뒤에만 허용한다. 이 실험은 화면 연결 시간을 줄이기 위한 것이며 운영 공급자 자동 fallback을 뜻하지 않는다.
+
+현재 기본키 `(ticker, bucket_start)`는 provider·venue·session·interval을 구분하지 못한다. 따라서 KIS 장애 시 토스로 같은 거래일을 자동 전환해 같은 테이블에 섞어 쓰지 않는다. 자동 fallback이 필요하면 공급자별 원본 저장과 canonical 선택 계층을 V3 이후 별도로 설계한다.
 
 ## 4. 공급자 속도·안정성 시험 계획
 
-세 공급자를 같은 5종목, 같은 KRX 정규장 조건으로 최소 한 거래일씩 독립 실행한다. 사용자마다 공급자 연결을 만들지 않고 서버가 공급자별 한 연결을 유지한다.
+KIS·키움·LS는 같은 5종목, 같은 KRX 정규장 조건으로 최소 한 거래일씩 독립 실행한다. 토스는 같은 조건에서 REST 분봉의 게시 지연과 후속 보정 여부를 측정한다. 사용자마다 공급자 연결이나 polling을 만들지 않고 서버가 공급자별 수집을 한 곳에서 유지한다.
 
 수집할 지표:
 
 | 영역 | 지표 | 임시 합격선 |
 | --- | --- | ---: |
-| 실시간 지연 | 공급자 시각 → 서버 수신 p50/p95/p99 | p95 < 1초, p99 < 2초 |
+| 실시간 지연 | 공급자 시각 → 서버 수신 p50/p95/p99 | 시각 필드 정밀도와 서버 NTP 오차 확인 후 합격선 확정. 초 단위뿐이면 최대 1초 양자화 오차를 함께 표시 |
+| REST-only 게시 지연 | 분 종료 → 토스 봉 최초 관측·최종 안정화 시간 | 실제 분포를 먼저 수집한 뒤 합격선 결정 |
 | 품질 | 중복, 역순, 미복구 누락, 비정상 가격·수량 | 확정 봉 미복구 누락 0 |
 | 연결 | 끊김 횟수, 재연결 시간, 구독 복구 시간 | 재연결 10초 이내 |
 | 복구 | 마지막 저장 시점부터 REST gap 백필 완료 시간 | 60초 이내 |
@@ -162,7 +232,7 @@ KRX 정규장 390분과 연 252거래일을 가정했다.
 
 ## 7. 조회 응답과 사용자 부하
 
-실제 애플리케이션, PostgreSQL 16.14, JWT 인증, 로컬 loopback 조건에서 측정했다. 서버와 k6가 같은 장비를 공유했으므로 이 수치를 운영 용량으로 그대로 보장하지 않는다.
+실제 애플리케이션, PostgreSQL 16.14, JWT 인증, 로컬 loopback 조건에서 측정했다. 5종목 9,750행을 적재했지만 k6는 삼성전자 `005930`의 같은 범위를 반복한 hot read이고, Nginx·TLS를 우회했으며 분봉 수집 write는 껐다. 서버와 k6가 같은 장비를 공유했으므로 이 수치를 운영 용량으로 그대로 보장하지 않는다.
 
 API:
 
@@ -183,30 +253,34 @@ Accept-Encoding: gzip
 
 ### 7.2 k6 결과
 
-각 시나리오는 고정 VU로 20초 실행했다. 합격선은 p95 < 200ms, HTTP 오류율 < 1%, 응답 검증 성공률 > 99%다.
+각 시나리오는 고정 VU로 20초 실행했다. 합격선은 p95 < 200ms, HTTP 오류율 < 1%, HTTP 200·`success=true`·최소 봉 수 검사 성공률 > 99%다. 매 요청의 OHLCV 전체 필드를 대조하는 검사는 아니다.
 
-| 구간 | 압축 | VU | 요청/초 | p95 | p99 | 오류율 | 판정 |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 1일 | gzip | 10 | 2,544.70 | 4.090ms | 4.962ms | 0% | 통과 |
-| 1일 | gzip | 100 | 2,413.75 | 45.791ms | 81.122ms | 0% | 통과 |
-| 5거래일 | gzip | 10 | 720.99 | 12.432ms | 14.099ms | 0% | 통과 |
-| 5거래일 | gzip | 100, 3회 중앙값 | 677.00 | 154.312ms | 275.808ms | 0% | 통과 |
+8월 11일 B0에서는 5거래일·100 VU 세 회차가 모두 통과했지만 최악 p95가 196.651ms로 기준에 가까웠다. 이 결과를 다시 확인하기 위해 8월 14일 B1은 네 조건을 모두 세 번씩 실행하고 두 번째 반복의 실행 순서를 반대로 했다.
 
-5거래일·100 VU는 실행 흔들림을 확인하기 위해 세 번 독립 실행했다. 각 실행의 요청/초·p95·p99는 `677.00·154.312ms·275.808ms`, `703.37·150.722ms·249.157ms`, `560.80·196.651ms·337.026ms`였다. 세 실행 모두 HTTP 오류율은 0%, 응답 내용 검증은 100%였고 p95 200ms 기준을 통과했다. 중앙값만 보면 안정적으로 보이지만 가장 느린 실행은 p95가 임계선에 3.349ms까지 접근했고 p99도 337.026ms였다. 이 변동성을 숨기지 않고 장시간 단계 부하에서 다시 확인해야 한다.
+| 구간 | VU | 요청/초 중앙값·범위 | p95 중앙값·범위 | p99 중앙값·범위 | 오류율 | 판정 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 1일 | 10 | 1,701.93 · 1,681.94~1,794.23 | 6.739ms · 6.378~6.768 | 7.791ms · 7.411~7.807 | 0% | 통과 3/3 |
+| 1일 | 100 | 1,661.27 · 1,653.61~1,702.57 | 66.079ms · 65.313~67.607 | 110.933ms · 110.170~112.458 | 0% | 통과 3/3 |
+| 5거래일 | 10 | 525.71 · 492.62~530.95 | 18.983ms · 18.258~19.842 | 22.672ms · 19.832~23.312 | 0% | 통과 3/3 |
+| 5거래일 | 100 | 517.81 · 514.79~525.26 | 203.918ms · 202.757~210.552 | 213.903ms · 211.406~234.654 | 0% | **실패 0/3** |
 
-VU는 실제 가입자 수가 아니라 쉬지 않고 같은 요청을 반복하는 가상 사용자 수다. 로컬 한 장비에서 20초 동안 실행한 결과를 운영 수용 인원이나 SLA로 환산하지 않는다. 이번 결과는 기본 7일 일괄 조회보다 1일 초기 조회, 과거 구간 추가 로딩, 확정 봉 캐시를 먼저 적용할 근거로만 사용한다.
+5거래일·100 VU의 회차별 p95는 `203.918ms`, `202.757ms`, `210.552ms`였고 최대 응답은 `403.612ms`, `528.946ms`, `434.590ms`였다. 모든 B1 실행의 HTTP 오류율은 0%, HTTP 200·`success`·최소 봉 수 검사는 100%였다.
+
+5거래일 조회는 10→100 VU에서 처리량이 525.71→517.81요청/초로 늘지 않았지만 p95는 18.983→203.918ms로 약 10.7배 증가했다. 포화 신호는 확인했으나 backend·PostgreSQL·k6가 같은 Mac을 공유했고 CPU, heap, GC, Hikari wait, PostgreSQL 지표를 수집하지 않았으므로 병목 원인을 단정하지 않는다. B0와 B1의 환경 동일성도 입증할 수 없어 두 결과의 차이를 성능 회귀로 표현하지 않는다.
+
+VU는 실제 가입자 수가 아니라 쉬지 않고 같은 요청을 반복하는 가상 사용자 수다. 로컬 한 장비에서 20초 동안 실행한 결과를 운영 수용 인원이나 SLA로 환산하지 않는다. 이번 결과는 기본 7일 일괄 조회보다 1일 초기 조회와 과거 구간 추가 로딩을 먼저 적용할 근거다. 실행 환경과 원시 summary hash는 [B1 부하 재검증 기록](blog/minute-candles/B1-LOAD-TEST-EVIDENCE.md)에 남겼다.
 
 ## 8. 사용자 증가 대응 순서
 
 1. 차트 진입 시 가장 최근 거래일만 REST로 받고 사용자가 과거로 이동할 때 추가 구간을 요청한다. 주말과 월요일 장 시작 전에는 직전 금요일을 기준으로 잡는다.
-2. 모든 JSON 응답에 gzip을 유지한다.
+2. 1KB 이상 분봉 JSON 응답에 gzip을 유지한다.
 3. 동일 종목·동일 구간 확정 봉은 사용자별 계산을 하지 않고 애플리케이션 캐시 또는 Redis에 저장한다.
-4. 공급자 WebSocket은 서버에서 종목당 한 번만 구독하고, 클라이언트 연결에는 내부 fan-out을 사용한다.
+4. 공급자 WebSocket 구독과 REST polling은 서버 수집기 한 곳에서만 수행하고, 클라이언트 연결에는 내부 fan-out을 사용한다.
 5. 현재 진행 중인 한 개 봉만 WebSocket으로 갱신하고 확정 이력은 REST·캐시로 제공한다.
 6. 단일 인스턴스 한계를 넘기 전에 읽기 인스턴스를 수평 확장하고, WebSocket 구독 상태는 Redis pub/sub 또는 전용 스트림 계층으로 분리한다.
 7. 캐시 hit ratio, 직렬화 CPU, DB pool 대기, 네트워크 egress, WebSocket 연결 수를 함께 관측한다.
 
-현재 Hikari pool은 5다. 이번 로컬 조회에는 충분했지만 운영에서는 인스턴스 수 × pool 크기가 PostgreSQL 최대 연결을 넘지 않도록 제한하고, 예상 사용자 수별 10분 이상 단계 부하와 soak로 다시 결정한다.
+현재 Hikari pool은 5다. B1에서 pool 대기 지표를 수집하지 않았으므로 이 값이 충분하거나 병목이라고 단정할 수 없다. 다음 시험에서 active·idle·pending을 함께 기록하고, 운영에서는 인스턴스 수 × pool 크기가 PostgreSQL 최대 연결을 넘지 않도록 제한한 뒤 예상 사용자 수별 10분 이상 단계 부하와 soak로 다시 결정한다.
 
 ## 9. 재현 방법
 
@@ -245,16 +319,17 @@ REST 부하:
 ```bash
 BASE_URL=http://localhost:8080 \
 TOKEN='<JWT>' \
+RUN_ID='b1-example-5d-100vu-r1' \
 TICKER=005930 \
 FROM=2026-08-03T00:00:00Z \
-TO=2026-08-10T00:00:00Z \
+TO=2026-08-08T00:00:00Z \
 MIN_CANDLES=1950 \
 VUS=100 \
 DURATION=20s \
 ./scripts/market-candles-load.sh
 ```
 
-실행별 원본 결과는 `build/reports/market-data/`에 생성된다. 성능 수치는 pass/fail assertion으로 고정하지 않고 같은 환경의 회귀 비교 자료로 사용한다.
+실행별 원본 결과는 `build/reports/market-data/`에 생성된다. k6의 임시 threshold로 각 실행의 pass/fail은 판정하지만, 이를 CI 차단선·운영 SLA·영구 용량 기준으로 고정하지 않고 같은 환경의 회귀 비교 자료로 사용한다.
 REST 시험 전에 해당 ticker와 기간의 봉을 수집하거나 별도 시험 데이터로 적재해야 한다. `MIN_CANDLES`는 빈 응답을 빠른 성공으로 잘못 측정하지 않기 위한 최소 개수 검증값이다.
 
 ## 10. 완료 기준과 남은 범위
@@ -263,10 +338,10 @@ REST 시험 전에 해당 ticker와 기간의 봉을 수집하거나 별도 시�
 
 - 1분 경계, 역순 체결, 동일 시각 sequence, 종목 격리
 - DB 제약, 멱등 저장, 높은 revision 보정, 기간 정렬 조회
-- DB 저장 실패 시 미확정 상태 보존과 늦은 체결 경계
+- DB 저장 실패 시 확정 봉의 저장 대기 상태 보존과 늦은 체결 경계
 - JWT 보호 API, 7일 범위 검증, gzip
 - 9,750봉 실제 저장 크기와 batch 성능
-- 10·100 VU 실제 REST 부하
+- 1일·5거래일 × 10·100 VU를 각 3회 실행한 실제 REST 부하와 5거래일·100 VU p95 실패 기록
 - 로컬 시드의 종목별 장중 가격 연속성과 1분 간격 1,945/1,945쌍, 잘못된 OHLCV·가격 단위 위반 0건
 - 예상 5종목·종목별 1,950개·시각 경계와 삼성전자 API/DB 1,950개 전체 필드 순서 비교
 - 한 ticker 전체·첫·마지막·중간 봉 삭제와 `high + 1` 훼손 실패 및 재적재 복구
@@ -274,6 +349,7 @@ REST 시험 전에 해당 ticker와 기간의 봉을 수집하거나 별도 시�
 다음 단계에서 반드시 확인할 것:
 
 - KIS·키움·LS 계정과 서면 표시 권리를 확보한 실시간 한 거래일 비교
+- 토스 계정과 서면 표시 권리를 확보한 1분봉 게시 지연·보정 방식 비교
 - 공급자 WebSocket 재연결, heartbeat, rate limit, gap REST 백필 구현
 - 공급자 분봉과 자체 집계 분봉의 일 단위 OHLCV 대조 및 revision 자동 증가
 - 클라이언트 WebSocket fan-out과 실제 차트 라이브러리 렌더링 성능

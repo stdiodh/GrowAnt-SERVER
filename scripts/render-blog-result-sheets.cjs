@@ -43,6 +43,7 @@ const sheets = {
   storage: "03-storage-aggregation.png",
   load: "04-k6-load-test.png",
   tests: "05-gradle-integration-tests.png",
+  loadB1: "09-k6-b1-retest.png",
 };
 
 async function main() {

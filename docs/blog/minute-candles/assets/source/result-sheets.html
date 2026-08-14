@@ -398,6 +398,10 @@
     .load-row:last-child { border-bottom: 0; }
     .load-grid > :not(:first-child) { text-align: right; }
     .load-row .p95 { color: var(--green); font-weight: 850; }
+    .load-row .p95.fail { color: var(--yellow); }
+
+    .status-note.warning { color: var(--yellow); }
+    .status-note.warning::after { border-bottom-color: var(--yellow); }
 
     .observation {
       margin-top: 12px;
@@ -582,11 +586,42 @@
           <div class="observation">최악 회차: p95 196.651ms · p99 337.026ms<br>560.80 req/s · p95 기준까지 3.349ms</div>
 
           <section class="evidence-block">
-            <div class="formula">판정: p95 &lt; 200ms · 오류율 &lt; 1%<br>응답 검사 성공률 &gt; 99%</div>
+            <div class="formula">판정: p95 &lt; 200ms · 오류율 &lt; 1%<br>응답 기본 검사 성공률 &gt; 99%</div>
             <div class="recovery">p99는 합격 기준을 정하지 않은 관찰값입니다.</div>
           </section>
 
           <div class="scope-note">VU는 실제 사용자 수가 아닙니다.<br>20초 로컬 측정이며 운영 성능이나 SLA를 보장하지 않습니다.</div>
+        </div></article>`,
+
+      loadB1: `
+        <article class="sheet load"><div class="content">
+          <header>
+            <div class="topline">
+              <div class="kicker">B1 k6 재검증 · 3회씩</div>
+              <div class="status-note warning">5일·100 VU 기준 초과</div>
+            </div>
+            <h1>긴 조회는 처리량보다 대기가 늘었다</h1>
+            <div class="blue-rule"></div>
+            <div class="subtitle">2026-08-14 · 조건별 20초 × 3회 · 표는 중앙값</div>
+            <div class="header-divider"></div>
+          </header>
+
+          <div class="load-table">
+            <div class="load-grid load-head"><div>조건</div><div>p95(ms)</div><div>p99(ms)</div><div>요청/초</div><div>판정</div></div>
+            <div class="load-grid load-row"><div>1일 · 10 VU</div><div class="p95">6.739</div><div>7.791</div><div>1,701.93</div><div>3/3</div></div>
+            <div class="load-grid load-row"><div>1일 · 100 VU</div><div class="p95">66.079</div><div>110.933</div><div>1,661.27</div><div>3/3</div></div>
+            <div class="load-grid load-row"><div>5일 · 10 VU</div><div class="p95">18.983</div><div>22.672</div><div>525.71</div><div>3/3</div></div>
+            <div class="load-grid load-row"><div>5일 · 100 VU</div><div class="p95 fail">203.918</div><div>213.903</div><div>517.81</div><div class="yellow">0/3</div></div>
+          </div>
+
+          <div class="observation">5일 조회는 10 → 100 VU에서도 처리량이 늘지 않았고<br>p95는 18.983 → 203.918ms로 약 10.7배 증가</div>
+
+          <section class="evidence-block">
+            <div class="formula">판정: p95 &lt; 200ms · 오류율 &lt; 1%<br>응답 기본 검사 성공률 &gt; 99%</div>
+            <div class="recovery">모든 실행에서 HTTP 오류 0% · 기본 검사 100%</div>
+          </section>
+
+          <div class="scope-note">서버·DB·k6가 같은 Mac을 공유했습니다.<br>원인은 CPU·gzip·pool·DB 지표를 더 수집해야 구분할 수 있습니다.</div>
         </div></article>`,
 
       tests: `
@@ -604,11 +639,11 @@
 
           <div class="test-equation">
             <div class="test-counts">
-              <span>서버 *Test<strong>55</strong></span>
-              <span>PostgreSQL *IT<strong>24</strong></span>
+              <span>서버 unitTest<strong>73</strong></span>
+              <span>PostgreSQL IT<strong>27</strong></span>
               <span>Flutter test<strong>62</strong></span>
             </div>
-            = <strong class="total">141개 통과</strong> · analyze 문제 <strong>0</strong>
+            = <strong class="total">162개 통과</strong> · analyze 문제 <strong>0</strong>
           </div>
 
           <section>
@@ -617,7 +652,7 @@
               <li>5종목 × 1,950개 = 9,750개</li>
               <li>종목별 장중 연결·1분 간격 각각 1,945 / 1,945</li>
               <li>OHLCV 오류 0 · 가격 단위 위반 0</li>
-              <li>5종목 마지막 종가와 상세 현재가 일치</li>
+              <li>5종목 상세 가격 ↔ seed 마지막 종가 의도적 일치</li>
               <li>삼성전자 API ↔ DB 1,950개 전체 필드 일치</li>
             </ul>
           </section>

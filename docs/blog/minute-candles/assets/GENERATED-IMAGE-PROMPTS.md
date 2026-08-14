@@ -1,6 +1,7 @@
 # 분봉 블로그 생성 이미지 프롬프트
 
 - 생성일: 2026-08-11
+- B1 결과표 추가일: 2026-08-14
 - 생성 방식: 삽화·종이 배경은 Codex 내장 ImageGen, 결과표의 한글·수치·선은 HTML/Chrome 렌더링
 - 참고 가이드: `THUMBNAIL.md`, `DESIGN.md`
 - 삽화 규격: 16:9 가로형 PNG, 1672×941px
@@ -10,9 +11,11 @@
 
 대표 이미지와 설명용 삽화 세 장은 ImageGen으로 생성했습니다. 최종 검수에서 썸네일의 캔들 색과 사용 권리 삽화의 승인 표현을 편집했고, OHLCV 삽화는 좌표 관계를 오해하지 않도록 초안을 폐기한 뒤 새로 생성했습니다. 설명용 삽화에는 실제 측정 수치와 공급자 로고를 넣지 않았습니다.
 
-결과 요약 `02`~`05`는 같은 분위기를 유지하면서도 한글과 수치를 정확히 보존하기 위해 혼합 방식으로 만들었습니다. ImageGen은 글자가 없는 공통 종이 배경만 만들고, 표·수치·선·강조는 `source/result-sheets.html`과 `scripts/render-blog-result-sheets.cjs`로 결정적으로 렌더링합니다.
+결과 요약 `02`~`05`와 `09`는 같은 분위기를 유지하면서도 한글과 수치를 정확히 보존하기 위해 혼합 방식으로 만들었습니다. ImageGen은 글자가 없는 공통 종이 배경만 만들고, 표·수치·선·강조는 `source/result-sheets.html`과 `scripts/render-blog-result-sheets.cjs`로 결정적으로 렌더링합니다. `09`는 새 배경을 생성하지 않고 B1 실행 manifest의 숫자를 기존 배경 위에 HTML로 옮겼습니다.
 
 ## `source/result-paper-background.png`
+
+아래는 `02`~`05` 네 장을 위해 처음 배경을 생성할 때 실제로 사용한 원문이라 `four` 표현을 보존했습니다. `09`는 같은 빈 배경을 재사용했으며 새 생성 프롬프트를 실행하지 않았습니다.
 
 ```text
 Use case: productivity-visual
@@ -33,7 +36,7 @@ Avoid: cards, boxes, dashboards, charts, icons, gradients, glassmorphism, neon, 
 
 ### 결과표 렌더링 방식
 
-- 대상: `02-local-api-evidence.png`, `03-storage-aggregation.png`, `04-k6-load-test.png`, `05-gradle-integration-tests.png`
+- 대상: `02-local-api-evidence.png`, `03-storage-aggregation.png`, `04-k6-load-test.png`, `05-gradle-integration-tests.png`, `09-k6-b1-retest.png`
 - 배경: 위 ImageGen 원본
 - 정확한 글자·표: 로컬 HTML/CSS 렌더링
 - 글꼴: Pretendard, 수치 보조 D2Coding
