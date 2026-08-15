@@ -32,7 +32,7 @@ class ObservationEvidenceManifestWriterTest {
         val json = Files.readString(first)
         assertThat(json)
             .contains("\"manifestFormatVersion\": \"1\"")
-            .contains("\"observationSchemaVersion\": 3")
+            .contains("\"observationSchemaVersion\": 4")
             .contains("\"completedAt\": \"2026-08-15T00:10:00Z\"")
             .contains("\"exportedAt\": \"2026-08-15T00:11:00Z\"")
             .contains("\"benchmarkSpecId\": \"provider-benchmark-v1\"")
@@ -83,7 +83,7 @@ class ObservationEvidenceManifestWriterTest {
             provider = "kis",
         )
         return ObservationEvidenceManifest(
-            observationSchemaVersion = 3,
+            observationSchemaVersion = 4,
             runId = scope.runId,
             provider = scope.provider,
             role = "REALTIME_POC",

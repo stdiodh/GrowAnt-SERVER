@@ -118,7 +118,7 @@ class MarketObservationStoreIT(
         assertThat(run.activationClockSampleSequence).isEqualTo(2)
         assertThat(store.findExpectedTickers(scope).map { it.ticker }).containsExactlyElementsOf(tickers)
         val bundle = store.evidenceBundle(scope)!!
-        assertThat(bundle.schemaVersion).isEqualTo(3)
+        assertThat(bundle.schemaVersion).isEqualTo(4)
         assertThat(bundle.activationClockSample?.sampleSequence).isEqualTo(2)
         assertThat(bundle.expectedTickers).hasSize(5)
     }
@@ -261,6 +261,7 @@ class MarketObservationStoreIT(
             store.appendRestPoll(
                 acceptedPoll.copy(
                     requestId = UUID.fromString("52000000-0000-0000-0000-000000000017"),
+                    pollRunId = UUID.fromString("52000000-0000-0000-0000-000000000017"),
                     requestStartedAt = run.windowEnd,
                     observedAt = run.windowEnd,
                     normalizedAt = run.windowEnd,
@@ -503,6 +504,243 @@ class MarketObservationStoreIT(
     }
 
     @Test
+    fun `REST pagination requires an exact contiguous chain and one terminal page`() {
+        val scope = scope("51000000-0000-0000-0000-000000000022", "toss")
+        createRunningRun(scope)
+        val rootRequestId = UUID.fromString("52000000-0000-0000-0000-000000000022")
+        val root = ObservationTestFixtures.restPoll(scope, rootRequestId).copy(
+            requestCursor = "2026-08-17T15:30:00+09:00",
+            nextCursor = "cursor-page-1",
+            pollTerminal = false,
+            returnedCandleCount = 0,
+            eligibleCandleCount = 0,
+        )
+        assertThat(store.appendRestPoll(root)).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            jdbc.queryForObject(
+                """
+                SELECT request_cursor
+                FROM market_observation_rest_polls
+                WHERE run_id = :runId AND provider = :provider AND request_id = :requestId
+                """.trimIndent(),
+                MapSqlParameterSource()
+                    .addValue("runId", scope.runId)
+                    .addValue("provider", scope.provider)
+                    .addValue("requestId", rootRequestId),
+                String::class.java,
+            ),
+        ).isEqualTo("2026-08-17T15:30:00+09:00")
+
+        val terminalPage = root.copy(
+            requestId = UUID.fromString("52000000-0000-0000-0000-000000000023"),
+            pollRunId = rootRequestId,
+            pageOrdinal = 1,
+            requestCursor = "cursor-page-1",
+            nextCursor = null,
+            pollTerminal = true,
+            requestStartedAt = ObservationTestFixtures.baseTime.plusSeconds(3),
+            observedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+            normalizedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+        )
+        assertThat(
+            store.appendRestPoll(
+                terminalPage.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000024"),
+                    pageOrdinal = 2,
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(
+            store.appendRestPoll(
+                terminalPage.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000025"),
+                    requestCursor = "wrong-cursor",
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(
+            store.appendRestPoll(
+                terminalPage.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000026"),
+                    requestedFrom = terminalPage.requestedFrom.plusSeconds(1),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(
+            store.appendRestPoll(
+                terminalPage.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000027"),
+                    requestStartedAt = ObservationTestFixtures.baseTime.plusSeconds(1),
+                    observedAt = ObservationTestFixtures.baseTime.plusSeconds(2),
+                    normalizedAt = ObservationTestFixtures.baseTime.plusSeconds(2),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.REJECTED)
+
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(scope, sampleSequence = 2).copy(
+                    sampledAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.compareAndSetRunState(
+                scope,
+                ObservationRunState.RUNNING,
+                ObservationRunState.COMPLETED,
+                ObservationTestFixtures.baseTime.plusSeconds(120),
+            ),
+        ).isFalse()
+
+        assertThat(store.appendRestPoll(terminalPage)).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThatThrownBy {
+            store.appendRestPoll(
+                terminalPage.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000028"),
+                ),
+            )
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
+        assertThat(
+            store.appendRestPoll(
+                terminalPage.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000029"),
+                    pageOrdinal = 2,
+                    requestCursor = "cursor-after-terminal",
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.REJECTED)
+
+        val snapshot = store.evidenceSnapshot(scope)!!
+        assertThat(snapshot.restPollCount).isEqualTo(2)
+        assertThat(snapshot.restPollRunCount).isEqualTo(1)
+        assertThat(
+            store.compareAndSetRunState(
+                scope,
+                ObservationRunState.RUNNING,
+                ObservationRunState.COMPLETED,
+                ObservationTestFixtures.baseTime.plusSeconds(120),
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun `completion preserves inclusive boundary candles for every REST page`() {
+        val scope = scope("51000000-0000-0000-0000-000000000023", "toss")
+        createRunningRun(scope)
+        val rootRequestId = UUID.fromString("52000000-0000-0000-0000-000000000030")
+        val root = ObservationTestFixtures.restPoll(scope, rootRequestId).copy(
+            nextCursor = "inclusive-boundary",
+            pollTerminal = false,
+        )
+        assertThat(store.appendRestPoll(root)).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.appendCandle(
+                ObservationTestFixtures.candle(scope, observationSequence = 1).copy(
+                    restRequestId = rootRequestId,
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+
+        val finalRequestId = UUID.fromString("52000000-0000-0000-0000-000000000031")
+        val finalPage = root.copy(
+            requestId = finalRequestId,
+            pollRunId = rootRequestId,
+            pageOrdinal = 1,
+            requestCursor = "inclusive-boundary",
+            nextCursor = null,
+            pollTerminal = true,
+            requestStartedAt = ObservationTestFixtures.baseTime.plusSeconds(3),
+            observedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+            normalizedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+        )
+        assertThat(store.appendRestPoll(finalPage)).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(scope, sampleSequence = 2).copy(
+                    sampledAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.compareAndSetRunState(
+                scope,
+                ObservationRunState.RUNNING,
+                ObservationRunState.COMPLETED,
+                ObservationTestFixtures.baseTime.plusSeconds(120),
+            ),
+        ).isFalse()
+
+        assertThat(
+            store.appendCandle(
+                ObservationTestFixtures.candle(scope, observationSequence = 2).copy(
+                    restRequestId = finalRequestId,
+                    observedAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.compareAndSetRunState(
+                scope,
+                ObservationRunState.RUNNING,
+                ObservationRunState.COMPLETED,
+                ObservationTestFixtures.baseTime.plusSeconds(120),
+            ),
+        ).isTrue()
+
+        val snapshot = store.evidenceSnapshot(scope)!!
+        assertThat(snapshot.restPollCount).isEqualTo(2)
+        assertThat(snapshot.restPollRunCount).isEqualTo(1)
+        assertThat(snapshot.candleCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `evidence checksum includes raw REST pagination provenance`() {
+        val first = scope("51000000-0000-0000-0000-000000000024", "toss")
+        val second = scope("51000000-0000-0000-0000-000000000025", "toss")
+        createRunningRun(first)
+        createRunningRun(second)
+        val rootRequestId = UUID.fromString("52000000-0000-0000-0000-000000000032")
+        val finalRequestId = UUID.fromString("52000000-0000-0000-0000-000000000033")
+
+        listOf(
+            first to "2026-08-17T09:31:00+09:00",
+            second to "2026-08-17T00:31:00Z",
+        ).forEach { (observationScope, rawCursor) ->
+            val root = ObservationTestFixtures.restPoll(observationScope, rootRequestId).copy(
+                nextCursor = rawCursor,
+                pollTerminal = false,
+                returnedCandleCount = 0,
+                eligibleCandleCount = 0,
+            )
+            assertThat(store.appendRestPoll(root)).isEqualTo(ObservationAppendResult.APPENDED)
+            assertThat(
+                store.appendRestPoll(
+                    root.copy(
+                        requestId = finalRequestId,
+                        pollRunId = rootRequestId,
+                        pageOrdinal = 1,
+                        requestCursor = rawCursor,
+                        nextCursor = null,
+                        pollTerminal = true,
+                        requestStartedAt = ObservationTestFixtures.baseTime.plusSeconds(3),
+                        observedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+                        normalizedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+                    ),
+                ),
+            ).isEqualTo(ObservationAppendResult.APPENDED)
+        }
+
+        val firstSnapshot = store.evidenceSnapshot(first)!!
+        val secondSnapshot = store.evidenceSnapshot(second)!!
+        assertThat(firstSnapshot.restPollCount).isEqualTo(2)
+        assertThat(firstSnapshot.restPollRunCount).isEqualTo(1)
+        assertThat(secondSnapshot.restPollRunCount).isEqualTo(1)
+        assertThat(firstSnapshot.rowChecksumSha256).isNotEqualTo(secondSnapshot.rowChecksumSha256)
+        assertThat(store.evidenceSnapshot(first)!!.rowChecksumSha256).isEqualTo(firstSnapshot.rowChecksumSha256)
+    }
+
+    @Test
     fun `run id and provider jointly isolate otherwise identical observations`() {
         val first = scope("51000000-0000-0000-0000-000000000007", "kis")
         val otherProvider = scope("51000000-0000-0000-0000-000000000007", "toss")
@@ -573,6 +811,34 @@ class MarketObservationStoreIT(
             retentionUntil = databaseNow.plusSeconds(3_600),
             baseTime = observationBase,
         )
+        val paginatedRootId = UUID.fromString("52000000-0000-0000-0000-000000000034")
+        val paginatedRoot = ObservationTestFixtures.restPoll(scope, paginatedRootId).copy(
+            nextCursor = "cleanup-page-cursor",
+            pollTerminal = false,
+            requestStartedAt = observationBase.plusSeconds(3),
+            observedAt = observationBase.plusSeconds(4),
+            normalizedAt = observationBase.plusSeconds(4),
+            requestedFrom = observationBase.plusSeconds(1),
+            requestedTo = observationBase.plusSeconds(120),
+            returnedCandleCount = 0,
+            eligibleCandleCount = 0,
+        )
+        assertThat(store.appendRestPoll(paginatedRoot)).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.appendRestPoll(
+                paginatedRoot.copy(
+                    requestId = UUID.fromString("52000000-0000-0000-0000-000000000035"),
+                    pollRunId = paginatedRootId,
+                    pageOrdinal = 1,
+                    requestCursor = "cleanup-page-cursor",
+                    nextCursor = null,
+                    pollTerminal = true,
+                    requestStartedAt = observationBase.plusSeconds(5),
+                    observedAt = observationBase.plusSeconds(6),
+                    normalizedAt = observationBase.plusSeconds(6),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
         assertThat(
             store.compareAndSetRunState(
                 scope,
@@ -590,7 +856,7 @@ class MarketObservationStoreIT(
         assertThat(audit.semanticsDeleted).isEqualTo(1)
         assertThat(audit.expectedTickersDeleted).isEqualTo(1)
         assertThat(audit.clockSamplesDeleted).isEqualTo(2)
-        assertThat(audit.restPollsDeleted).isEqualTo(1)
+        assertThat(audit.restPollsDeleted).isEqualTo(3)
         assertThat(audit.ticksDeleted).isEqualTo(1)
         assertThat(audit.candlesDeleted).isEqualTo(1)
         assertThat(audit.faultEventsDeleted).isEqualTo(1)

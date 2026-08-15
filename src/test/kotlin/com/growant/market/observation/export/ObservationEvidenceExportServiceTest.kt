@@ -44,7 +44,7 @@ class ObservationEvidenceExportServiceTest {
 
         val json = Files.readString(output)
         assertThat(json)
-            .contains("\"observationSchemaVersion\": 3")
+            .contains("\"observationSchemaVersion\": 4")
             .contains("\"benchmarkSpecId\": \"provider-benchmark-v1\"")
             .contains("\"benchmarkSpecChecksumSha256\": \"${"c".repeat(64)}\"")
             .contains("\"sourceCommitSha\": \"${"d".repeat(40)}\"")
@@ -63,6 +63,8 @@ class ObservationEvidenceExportServiceTest {
             .contains("\"storage\": \"ALLOWED\"")
             .contains("\"rightsSha256\": \"${"a".repeat(64)}\"")
             .contains("\"rowsSha256\": \"${"f".repeat(64)}\"")
+            .contains("\"rest-poll\": 2")
+            .contains("\"rest-poll-run\": 1")
             .doesNotContain("synthetic-fixture-rights-v1")
             .doesNotContain("50000")
             .doesNotContain("price")
@@ -80,7 +82,7 @@ class ObservationEvidenceExportServiceTest {
             completedAt = completedAt,
         )
         val bundle = ObservationEvidenceBundle(
-            schemaVersion = 3,
+            schemaVersion = 4,
             run = run,
             semantics = null,
             activationClockSample = null,
@@ -109,7 +111,7 @@ class ObservationEvidenceExportServiceTest {
         val output = directory.resolve("running.json")
         given(repository.evidenceBundle(run.scope)).willReturn(
             ObservationEvidenceBundle(
-                schemaVersion = 3,
+                schemaVersion = 4,
                 run = run,
                 semantics = ObservationTestFixtures.semantics(run.scope),
                 activationClockSample = ObservationTestFixtures.clockSample(run.scope),
@@ -141,7 +143,7 @@ class ObservationEvidenceExportServiceTest {
     }
 
     private fun completedBundle(run: com.growant.market.observation.ObservationRun) = ObservationEvidenceBundle(
-        schemaVersion = 3,
+        schemaVersion = 4,
         run = run,
         semantics = ObservationTestFixtures.semantics(run.scope),
         activationClockSample = ObservationTestFixtures.clockSample(run.scope),
@@ -154,6 +156,7 @@ class ObservationEvidenceExportServiceTest {
         state = state,
         clockSampleCount = 1,
         restPollCount = 2,
+        restPollRunCount = 1,
         tickCount = 3,
         candleCount = 4,
         faultEventCount = 5,

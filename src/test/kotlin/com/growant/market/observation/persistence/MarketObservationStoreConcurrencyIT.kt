@@ -222,6 +222,86 @@ class MarketObservationStoreConcurrencyIT(
     }
 
     @Test
+    fun `completion rechecks the committed terminal REST page after waiting for its append`() {
+        val scope = ObservationScope(
+            runId = UUID.fromString("54000000-0000-0000-0000-000000000007"),
+            provider = "toss",
+        )
+        createRunningRun(scope)
+        val rootRequestId = UUID.fromString("55000000-0000-0000-0000-000000000001")
+        val root = ObservationTestFixtures.restPoll(scope, rootRequestId).copy(
+            nextCursor = "terminal-page-cursor",
+            pollTerminal = false,
+            returnedCandleCount = 0,
+            eligibleCandleCount = 0,
+        )
+        assertThat(store.appendRestPoll(root)).isEqualTo(ObservationAppendResult.APPENDED)
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(scope, sampleSequence = 2).copy(
+                    sampledAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+
+        val terminalPage = root.copy(
+            requestId = UUID.fromString("55000000-0000-0000-0000-000000000002"),
+            pollRunId = rootRequestId,
+            pageOrdinal = 1,
+            requestCursor = "terminal-page-cursor",
+            nextCursor = null,
+            pollTerminal = true,
+            requestStartedAt = ObservationTestFixtures.baseTime.plusSeconds(3),
+            observedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+            normalizedAt = ObservationTestFixtures.baseTime.plusSeconds(4),
+        )
+        val executor = Executors.newFixedThreadPool(2)
+        val pageInserted = CountDownLatch(1)
+        val releasePageCommit = CountDownLatch(1)
+        val completionAttempted = CountDownLatch(1)
+
+        try {
+            val append = executor.submit<ObservationAppendResult> {
+                checkNotNull(
+                    TransactionTemplate(transactionManager).execute {
+                        val result = store.appendRestPoll(terminalPage)
+                        assertThat(result).isEqualTo(ObservationAppendResult.APPENDED)
+                        pageInserted.countDown()
+                        assertThat(releasePageCommit.await(5, TimeUnit.SECONDS)).isTrue()
+                        result
+                    },
+                )
+            }
+
+            assertThat(pageInserted.await(5, TimeUnit.SECONDS)).isTrue()
+            val completion = executor.submit<Boolean> {
+                completionAttempted.countDown()
+                store.compareAndSetRunState(
+                    scope = scope,
+                    expected = ObservationRunState.RUNNING,
+                    updated = ObservationRunState.COMPLETED,
+                    changedAt = ObservationTestFixtures.baseTime.plusSeconds(120),
+                )
+            }
+
+            assertThat(completionAttempted.await(5, TimeUnit.SECONDS)).isTrue()
+            assertThatThrownBy { completion.get(250, TimeUnit.MILLISECONDS) }
+                .isInstanceOf(TimeoutException::class.java)
+
+            releasePageCommit.countDown()
+            assertThat(append.get(5, TimeUnit.SECONDS)).isEqualTo(ObservationAppendResult.APPENDED)
+            assertThat(completion.get(5, TimeUnit.SECONDS)).isTrue()
+            assertThat(store.findRun(scope)!!.state).isEqualTo(ObservationRunState.COMPLETED)
+            assertThat(store.evidenceSnapshot(scope)!!.restPollCount).isEqualTo(2)
+            assertThat(store.evidenceSnapshot(scope)!!.restPollRunCount).isEqualTo(1)
+        } finally {
+            releasePageCommit.countDown()
+            executor.shutdownNow()
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue()
+        }
+    }
+
+    @Test
     fun `completion rejects an expired decision after waiting for an append lock`() {
         val scope = ObservationScope(
             runId = UUID.fromString("54000000-0000-0000-0000-000000000006"),

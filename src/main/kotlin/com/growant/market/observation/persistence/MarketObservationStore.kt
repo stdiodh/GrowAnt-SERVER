@@ -299,6 +299,7 @@ class MarketObservationStore(
             state = counts.state,
             clockSampleCount = counts.clockSampleCount,
             restPollCount = counts.restPollCount,
+            restPollRunCount = counts.restPollRunCount,
             tickCount = counts.tickCount,
             candleCount = counts.candleCount,
             faultEventCount = counts.faultEventCount,
@@ -587,6 +588,7 @@ class MarketObservationStore(
         state = ObservationRunState.valueOf(getString("state")),
         clockSampleCount = getLong("clock_sample_count"),
         restPollCount = getLong("rest_poll_count"),
+        restPollRunCount = getLong("rest_poll_run_count"),
         tickCount = getLong("tick_count"),
         candleCount = getLong("candle_count"),
         faultEventCount = getLong("fault_event_count"),
@@ -698,6 +700,11 @@ class MarketObservationStore(
     private fun RestPollObservation.parameters() = scope.parameters()
         .addValue("ticker", ticker)
         .addValue("requestId", requestId)
+        .addValue("pollRunId", pollRunId)
+        .addValue("pageOrdinal", pageOrdinal)
+        .addValue("requestCursor", requestCursor)
+        .addValue("nextCursor", nextCursor)
+        .addValue("pollTerminal", pollTerminal)
         .addValue("observedAt", observedAt.atUtc())
         .addValue("requestStartedAt", requestStartedAt.atUtc())
         .addValue("normalizedAt", normalizedAt?.atUtc())
@@ -772,6 +779,7 @@ class MarketObservationStore(
         val state: ObservationRunState,
         val clockSampleCount: Long,
         val restPollCount: Long,
+        val restPollRunCount: Long,
         val tickCount: Long,
         val candleCount: Long,
         val faultEventCount: Long,
@@ -801,7 +809,7 @@ class MarketObservationStore(
     )
 
     private companion object {
-        const val EVIDENCE_SCHEMA_VERSION = 3
+        const val EVIDENCE_SCHEMA_VERSION = 4
 
         const val AS_OF_CLOCK_SAMPLE_SEQUENCE_SQL = """
             (
@@ -832,6 +840,59 @@ class MarketObservationStore(
                   )
                   AND abs(hc.local_clock_offset_micros::numeric) + hc.uncertainty_micros
                       <= :maximumClockErrorMicros
+            )
+        """
+
+        const val INCOMPLETE_REST_EVIDENCE_SQL = """
+            (
+                EXISTS (
+                    SELECT 1
+                    FROM market_observation_rest_polls rp
+                    WHERE rp.run_id = r.run_id
+                      AND rp.provider = r.provider
+                      AND rp.outcome = 'SUCCESS'
+                      AND rp.eligible_candle_count <> (
+                          SELECT count(*)
+                          FROM market_observation_candles rc
+                          WHERE rc.run_id = rp.run_id
+                            AND rc.provider = rp.provider
+                            AND rc.rest_request_id = rp.request_id
+                            AND rc.source = 'PROVIDER_REST'
+                      )
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM market_observation_rest_polls rp
+                    WHERE rp.run_id = r.run_id
+                      AND rp.provider = r.provider
+                    GROUP BY rp.ticker, rp.poll_run_id
+                    HAVING count(*) FILTER (WHERE rp.poll_terminal) <> 1
+                        OR max(rp.page_ordinal) FILTER (WHERE rp.poll_terminal) <> max(rp.page_ordinal)
+                        OR min(rp.page_ordinal) <> 0
+                        OR count(*) <> max(rp.page_ordinal) + 1
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM market_observation_rest_polls current_page
+                    WHERE current_page.run_id = r.run_id
+                      AND current_page.provider = r.provider
+                      AND current_page.page_ordinal > 0
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM market_observation_rest_polls previous_page
+                          WHERE previous_page.run_id = current_page.run_id
+                            AND previous_page.provider = current_page.provider
+                            AND previous_page.ticker = current_page.ticker
+                            AND previous_page.poll_run_id = current_page.poll_run_id
+                            AND previous_page.page_ordinal = current_page.page_ordinal - 1
+                            AND previous_page.outcome = 'SUCCESS'
+                            AND previous_page.poll_terminal = FALSE
+                            AND previous_page.next_cursor = current_page.request_cursor
+                            AND previous_page.requested_from = current_page.requested_from
+                            AND previous_page.requested_to = current_page.requested_to
+                            AND previous_page.normalized_at <= current_page.request_started_at
+                      )
+                )
             )
         """
 
@@ -955,21 +1016,7 @@ class MarketObservationStore(
                   AND r.retention_until > :changedAt
                   AND :changedAt >= r.window_end
                   AND $HEALTHY_AS_OF_CLOCK_SQL
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM market_observation_rest_polls rp
-                      WHERE rp.run_id = r.run_id
-                        AND rp.provider = r.provider
-                        AND rp.outcome = 'SUCCESS'
-                        AND rp.eligible_candle_count <> (
-                            SELECT count(*)
-                            FROM market_observation_candles rc
-                            WHERE rc.run_id = rp.run_id
-                              AND rc.provider = rp.provider
-                              AND rc.rest_request_id = rp.request_id
-                              AND rc.source = 'PROVIDER_REST'
-                        )
-                  )
+                  AND NOT $INCOMPLETE_REST_EVIDENCE_SQL
             ) AS ready
         """
 
@@ -986,24 +1033,7 @@ class MarketObservationStore(
               AND (:updated = 'INVALID' OR retention_until > :changedAt)
               AND (:updated <> 'COMPLETED' OR :changedAt >= window_end)
               AND (:updated <> 'COMPLETED' OR $HEALTHY_AS_OF_CLOCK_SQL)
-              AND (
-                  :updated <> 'COMPLETED'
-                  OR NOT EXISTS (
-                      SELECT 1
-                      FROM market_observation_rest_polls rp
-                      WHERE rp.run_id = r.run_id
-                        AND rp.provider = r.provider
-                        AND rp.outcome = 'SUCCESS'
-                        AND rp.eligible_candle_count <> (
-                            SELECT count(*)
-                            FROM market_observation_candles rc
-                            WHERE rc.run_id = rp.run_id
-                              AND rc.provider = rp.provider
-                              AND rc.rest_request_id = rp.request_id
-                              AND rc.source = 'PROVIDER_REST'
-                        )
-                  )
-              )
+              AND (:updated <> 'COMPLETED' OR NOT $INCOMPLETE_REST_EVIDENCE_SQL)
               AND (
                   (:expected = 'PLANNED' AND :updated = 'INVALID')
                   OR (:expected = 'RUNNING' AND :updated IN ('COMPLETED', 'INVALID'))
@@ -1100,14 +1130,16 @@ class MarketObservationStore(
 
         const val APPEND_REST_POLL_SQL = """
             INSERT INTO market_observation_rest_polls (
-                run_id, provider, ticker, request_id, observed_at,
+                run_id, provider, ticker, request_id, poll_run_id, page_ordinal,
+                request_cursor, next_cursor, poll_terminal, observed_at,
                 request_started_at, normalized_at, requested_from, requested_to,
                 outcome, http_status, retry_after_millis, rate_limit_remaining,
                 rate_limit_reset_at, round_robin_position, returned_candle_count,
                 eligible_candle_count
             )
             SELECT
-                :runId, :provider, :ticker, :requestId, :observedAt,
+                :runId, :provider, :ticker, :requestId, :pollRunId, :pageOrdinal,
+                :requestCursor, :nextCursor, :pollTerminal, :observedAt,
                 :requestStartedAt, :normalizedAt, :requestedFrom, :requestedTo,
                 :outcome, :httpStatus, :retryAfterMillis, :rateLimitRemaining,
                 :rateLimitResetAt, :roundRobinPosition, :returnedCandleCount,
@@ -1126,6 +1158,24 @@ class MarketObservationStore(
                   WHERE e.run_id = r.run_id
                     AND e.provider = r.provider
                     AND e.ticker = :ticker
+              )
+              AND (
+                  :pageOrdinal = 0
+                  OR EXISTS (
+                      SELECT 1
+                      FROM market_observation_rest_polls previous_page
+                      WHERE previous_page.run_id = r.run_id
+                        AND previous_page.provider = r.provider
+                        AND previous_page.ticker = :ticker
+                        AND previous_page.poll_run_id = :pollRunId
+                        AND previous_page.page_ordinal = :pageOrdinal - 1
+                        AND previous_page.outcome = 'SUCCESS'
+                        AND previous_page.poll_terminal = FALSE
+                        AND previous_page.next_cursor = :requestCursor
+                        AND previous_page.requested_from = :requestedFrom
+                        AND previous_page.requested_to = :requestedTo
+                        AND previous_page.normalized_at <= :requestStartedAt
+                  )
               )
             FOR SHARE OF r
         """
@@ -1244,6 +1294,8 @@ class MarketObservationStore(
                     WHERE c.run_id = r.run_id AND c.provider = r.provider) AS clock_sample_count,
                 (SELECT count(*) FROM market_observation_rest_polls p
                     WHERE p.run_id = r.run_id AND p.provider = r.provider) AS rest_poll_count,
+                (SELECT count(DISTINCT p.poll_run_id) FROM market_observation_rest_polls p
+                    WHERE p.run_id = r.run_id AND p.provider = r.provider) AS rest_poll_run_count,
                 (SELECT count(*) FROM market_observation_ticks t
                     WHERE t.run_id = r.run_id AND t.provider = r.provider) AS tick_count,
                 (SELECT count(*) FROM market_observation_candles c
@@ -1424,13 +1476,15 @@ class MarketObservationStore(
             CanonicalRowQuery(
                 "rest",
                 """
-                    SELECT ticker, request_id, observed_at, request_started_at, normalized_at,
+                    SELECT ticker, poll_run_id, page_ordinal, request_id,
+                        request_cursor, next_cursor, poll_terminal,
+                        observed_at, request_started_at, normalized_at,
                         requested_from, requested_to, outcome, http_status, retry_after_millis,
                         rate_limit_remaining, rate_limit_reset_at, round_robin_position,
                         returned_candle_count, eligible_candle_count
                     FROM market_observation_rest_polls
                     WHERE run_id = :runId AND provider = :provider
-                    ORDER BY request_id
+                    ORDER BY ticker, poll_run_id, page_ordinal
                 """,
             ),
             CanonicalRowQuery(

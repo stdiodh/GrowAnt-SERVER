@@ -99,6 +99,7 @@ class ObservationEvidenceExportService(
                     "expected-ticker" to expectedTickers.size.toLong(),
                     "fault-event" to snapshot.faultEventCount,
                     "rest-poll" to snapshot.restPollCount,
+                    "rest-poll-run" to snapshot.restPollRunCount,
                     "tick" to snapshot.tickCount,
                 ),
             ),

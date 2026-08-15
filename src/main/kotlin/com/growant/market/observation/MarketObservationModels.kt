@@ -358,6 +358,11 @@ data class RestPollObservation(
     val scope: ObservationScope,
     val ticker: String,
     val requestId: UUID,
+    val pollRunId: UUID,
+    val pageOrdinal: Int,
+    val requestCursor: String?,
+    val nextCursor: String?,
+    val pollTerminal: Boolean,
     val observedAt: Instant,
     val requestStartedAt: Instant,
     val normalizedAt: Instant?,
@@ -374,6 +379,31 @@ data class RestPollObservation(
 ) {
     init {
         requireTicker(ticker)
+        require(pageOrdinal >= 0) { "pageOrdinal must not be negative" }
+        require((pageOrdinal == 0) == (pollRunId == requestId)) {
+            "page zero must use its requestId as pollRunId"
+        }
+        require(pageOrdinal == 0 || requestCursor != null) {
+            "continuation pages require a requestCursor"
+        }
+        require(requestCursor == null || requestCursor.matches(CURSOR_PATTERN)) {
+            "requestCursor must contain 1 to $CURSOR_MAX_LENGTH printable ASCII characters"
+        }
+        require(nextCursor == null || nextCursor.matches(CURSOR_PATTERN)) {
+            "nextCursor must contain 1 to $CURSOR_MAX_LENGTH printable ASCII characters"
+        }
+        require(requestCursor == null || nextCursor == null || requestCursor != nextCursor) {
+            "nextCursor must differ from requestCursor"
+        }
+        require(pollTerminal || outcome == RestPollOutcome.SUCCESS && nextCursor != null) {
+            "non-terminal REST poll pages require a successful outcome and nextCursor"
+        }
+        require(
+            outcome == RestPollOutcome.SUCCESS ||
+                pollTerminal && nextCursor == null && eligibleCandleCount == 0,
+        ) {
+            "failed REST poll pages must terminate without a nextCursor or eligible candles"
+        }
         require(!observedAt.isBefore(requestStartedAt)) {
             "observedAt must not be before requestStartedAt"
         }
@@ -395,6 +425,11 @@ data class RestPollObservation(
             outcome != RestPollOutcome.SUCCESS ||
                 (httpStatus != null && httpStatus in 200..299 && normalizedAt != null),
         ) { "successful REST polls require a 2xx status and normalization timestamp" }
+    }
+
+    private companion object {
+        const val CURSOR_MAX_LENGTH = 120
+        val CURSOR_PATTERN = Regex("[!-~]{1,$CURSOR_MAX_LENGTH}")
     }
 }
 
@@ -548,6 +583,7 @@ data class ObservationEvidenceSnapshot(
     val state: ObservationRunState,
     val clockSampleCount: Long,
     val restPollCount: Long,
+    val restPollRunCount: Long,
     val tickCount: Long,
     val candleCount: Long,
     val faultEventCount: Long,
@@ -556,8 +592,20 @@ data class ObservationEvidenceSnapshot(
     val rowChecksumSha256: String,
 ) {
     init {
-        require(listOf(clockSampleCount, restPollCount, tickCount, candleCount, faultEventCount).all { it >= 0 }) {
+        require(
+            listOf(
+                clockSampleCount,
+                restPollCount,
+                restPollRunCount,
+                tickCount,
+                candleCount,
+                faultEventCount,
+            ).all { it >= 0 },
+        ) {
             "observation evidence counts must not be negative"
+        }
+        require(restPollRunCount <= restPollCount) {
+            "restPollRunCount must not exceed restPollCount"
         }
         require((firstObservedAt == null) == (lastObservedAt == null)) {
             "firstObservedAt and lastObservedAt must be present together"
