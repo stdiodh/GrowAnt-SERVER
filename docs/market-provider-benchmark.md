@@ -7,8 +7,10 @@
 - 운영 코드의 실제 공급자는 아직 `sim`뿐이며 KIS·키움·토스·LS 어댑터는 없다.
 - 현재 분봉 조회 API는 PostgreSQL에 저장된 행만 반환하며 요청 시 공급자 API로 fallback하지 않는다.
 - 이 변경에서 추가한 B2/B3 k6 도구는 GrowAnt REST read leg만 가압한다.
-- 후보별 관측 저장소, replay write orchestrator, 서버·DB 지표 수집과 실제 장 5일 비교는 아직 구현·실행 전이다.
+- 후보별 관측 저장소 P1은 [별도 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)에서 구현·검증을 마쳤지만 아직 `develop`에 병합되지 않았다. replay write orchestrator, 서버·DB 지표 수집과 실제 장 5일 비교는 구현·실행 전이다.
 - 따라서 현재 단계에서는 공급자 우승자를 선언하지 않는다.
+
+2026-08-15 공개 이용 범위 기준으로 토스는 본인 매매 목적 밖의 저장·벤치마크·외부 표시가 `RIGHTS_BLOCKED`다. KIS는 개인 시세의 제3자 제공이 금지되고 내부 저장·벤치마크 범위는 서면 확인 전 `UNKNOWN`이다. 따라서 GrowAnt 공개 운영에 채택 가능한 개인용 무료 API는 현재 없고, 실제 공급자 호출도 Gate 0을 통과한 후보만 수행한다.
 
 ## 1. 별도로 결정해야 하는 세 역할
 
@@ -16,11 +18,11 @@
 
 | 결정 | 후보 | 목적 |
 | --- | --- | --- |
-| 5종목 실시간 POC 공급자 | KIS·키움·LS | WebSocket 체결, 자체 1분봉 집계, 재연결과 REST 복구 검증 |
-| 완성 분봉 비교 공급자 | KIS·키움·토스·LS | 공급자가 만든 확정 봉과 자체 집계 봉 대조 |
+| 5종목 실시간 POC 공급자 | 권리 허가를 받은 KIS·키움·LS | WebSocket 체결, 자체 1분봉 집계, 재연결과 REST 복구 검증 |
+| 완성 분봉 비교 공급자 | 권리 허가를 받은 KIS·키움·토스·LS | 공급자가 만든 확정 봉과 자체 집계 봉 대조 |
 | KOSPI 전체 운영 공급자 | KRX 승인·코스콤 계약 경로 또는 전체 시장 계약이 가능한 공급자 | 전 종목 제공, 저장·표시·재배포 권리와 SLA 확보 |
 
-토스의 현재 공개 운영 명세는 REST-only이므로 실시간 WebSocket 순위에 넣지 않는다. 분 종료 뒤 봉이 처음 나타나는 시간과 더 이상 바뀌지 않는 시간을 측정하는 비교군으로 사용한다. KIS 원시 체결 봉과 가격을 비교할 때는 `adjusted=false`를 명시하고, venue·session 의미를 서면으로 확인하기 전에는 KRX 정규장 OHLCV 정확성 비교군으로 판정하지 않는다.
+토스의 현재 공개 운영 명세는 REST-only이므로 실시간 WebSocket 순위에 넣지 않는다. 서면 예외 승인을 받는 경우에만 분 종료 뒤 봉이 처음 나타나는 시간과 더 이상 바뀌지 않는 시간을 측정하는 비교군으로 사용한다. KIS 원시 체결 봉과 가격을 비교할 때는 `adjusted=false`를 명시하고, venue·session 의미를 서면으로 확인하기 전에는 KRX 정규장 OHLCV 정확성 비교군으로 판정하지 않는다.
 
 ## 2. 점수보다 먼저 적용하는 탈락 조건
 
@@ -41,7 +43,7 @@
 
 현재 V2 `minute_candles`의 기본키는 `(ticker, bucket_start)`뿐이다. 같은 시각의 KIS·키움·토스·LS 봉을 이 테이블에 넣으면 충돌하거나 높은 revision이 다른 후보 값을 덮으므로 비교 증거로 사용할 수 없다.
 
-실제 후보를 호출하기 전에 canonical V2와 분리된 시험 전용 관측 저장소를 준비한다. 최소 식별자는 다음과 같다.
+실제 후보를 호출하기 전에 canonical V2와 분리된 시험 전용 관측 저장소를 준비한다. 이 기반은 별도 PR #4에 구현되어 있으므로 해당 PR을 병합하고 아래 식별·권리 gate가 유지되는지 확인한 뒤 사용한다. 최소 식별자는 다음과 같다.
 
 ```text
 공통: run_id + provider + venue + session + interval + ticker
@@ -51,17 +53,17 @@ candle observation: bucket_start + provider_revision 또는 observation_sequence
 fault/recovery event: fault_id + event_sequence
 ```
 
-관측 저장소는 동일 체결의 중복 수신, 같은 봉의 반복 polling과 revision, 재연결 전후 사건을 덮어쓰지 않는다. 공급자 payload, 수신 시각, 정규화 결과, REST 관측 구간, reconnect·backfill 상태와 checksum을 후보별로 격리한다. 원시 payload와 가격·시각열은 계약이 저장·복제·재생·CI 사용을 명시적으로 허용하는 경우에만 보관한다. 허용되지 않으면 복원할 수 없는 완전 합성 fixture와 허용된 집계 지표만 남긴다. 시장 데이터는 개인정보가 아니므로 단순 비식별화가 이용 권리를 새로 만들지 않는다.
+관측 저장소는 동일 체결의 중복 수신, 같은 봉의 반복 polling과 revision, 재연결 전후 사건을 덮어쓰지 않는다. PR #4의 P1은 header·URL·credential·raw payload를 저장하지 않고 typed observation과 안전한 count/checksum manifest만 남긴다. 여섯 권리 판단은 모두 `UNKNOWN`이 아니어야 하고 이 시험에 필요한 저장·벤치마크는 `ALLOWED`여야 한다. 재생·CI·내부 표시·외부 제공은 실제로 사용할 때만 `ALLOWED`인 경로를 열며 `DENIED`인 용도에는 데이터를 쓰지 않는다. 허용되지 않은 실제 가격·시각열 대신 복원할 수 없는 완전 합성 fixture와 허용된 집계 지표만 사용한다. 시장 데이터는 개인정보가 아니므로 단순 비식별화가 이용 권리를 새로 만들지 않는다.
 
 ## 4. 공급자에는 정상 사용량만 적용
 
-k6로 증권사나 거래소 endpoint를 직접 가압하지 않는다. 실제 공급자는 같은 장비와 네트워크에서 정상 사용량으로 관측한다.
+k6로 증권사나 거래소 endpoint를 직접 가압하지 않는다. 실제 공급자는 Gate 0을 통과한 뒤 같은 장비와 네트워크에서 정상 사용량으로 관측한다.
 
 - KIS·키움·LS: 공급자당 물리 WebSocket 한 개로 같은 5종목 구독
 - REST 분봉 안정성 비교: 공급자별 1 TPS 이하의 공통 pace 사용
 - 토스 1 TPS round-robin: 종목별 관측 간격이 5초이므로 `마지막 미관측 < 실제 게시 ≤ 최초 관측` 구간과 ticker 순번 회전을 함께 기록
 - 게시 지연 정밀 측정: 공급자별 공식 한도와 서면 허용 범위 안에서 별도 pace를 정하고 공통 1 TPS 결과와 섞지 않음
-- 2xx·401·429·5xx, `Retry-After`, 공급자가 제공하는 rate-limit header 기록
+- 2xx·401·429·5xx, 공급자 body 오류 코드, 실제로 받은 `Retry-After`와 rate-limit header 기록. KIS는 `EGW00201`을 공식 quota 신호로 사용
 - 인증 발급 endpoint는 벤치마크 반복 대상에서 제외하고 토큰을 재사용
 
 REST 봉은 새 분이 끝난 뒤 10분 동안 1 TPS round-robin 관측을 계속한다. 분 종료 30초 이후 3회 연속 같은 값이면 `provisionally_stable`로 표시하지만 조기 종료하지 않는다. `last_changed_at`은 10분 관측 창이 끝나야 확정하고, 장 종료 30분 뒤와 다음 거래일 13:30 KST에 공급자 봉과 독립 기준을 다시 대조한다. 이후 값이 달라지면 late revision으로 기록하고 기존 안정화 판정을 무효화한다.
@@ -212,22 +214,23 @@ lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, high
 
 ## 11. 공식 근거
 
-- KIS, [REST·WebSocket 유량 안내](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989)
+- KIS, [REST·WebSocket 유량 안내](https://apiportal.koreainvestment.com/community/10000000-0000-0011-0000-000000000001/post/d0d1a83f-6f8d-4437-9700-6d26702fd989), [개인 Open API 이용약관](https://apiportal.koreainvestment.com/api/terms/public?termsType=MARKET), [제휴 안내](https://apiportal.koreainvestment.com/provider-info)
 - 키움, [REST·실시간 시세 유량 안내](https://openapi.kiwoom.com/intro?dummyVal=0)
-- 토스증권, [현재 운영 방식과 호출 한도](https://openapi.tossinvest.com/openapi-docs/overview.md), [캔들 명세](https://openapi.tossinvest.com/openapi-docs/latest/api-reference/Apis/MarketDataApi.md#getCandles)
+- 토스증권, [현재 운영 방식과 호출 한도](https://openapi.tossinvest.com/openapi-docs/overview.md), [canonical OpenAPI 명세](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json), [이용 범위](https://corp.tossinvest.com/ko/open-api)
 - LS증권, [t8412 N분봉](https://openapi.ls-sec.co.kr/apiservice?group_id=73142d9f-1983-48d2-8543-89b75535d34c&api_id=12320341-ad85-429a-90bd-5b3771c5e89f), [실시간 WebSocket](https://openapi.ls-sec.co.kr/apiservice?api_id=9a2800c3-9bf2-4d67-8d83-905074f06646)
 - KRX, [실시간 시장데이터 상품](https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA002.jsp), [시장데이터 이용 계약 절차](https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA003.jsp), [정보 이용 라이선스](https://openapi.krx.co.kr/contents/OPP/DATA/OPPDATA004.jsp)
 - KRX, [정규시장 매매거래시간](https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp)
 
-위 공개 근거는 2026-08-15에 확인했다. 공식 한도와 명세는 바뀔 수 있으므로 실제 결정 직전에 다시 확인하고, 공개 문서에 없는 전체 시장 상품 범위·전송 사양·SLA는 P6 계약 견적서와 기술 명세를 증거로 첨부한다.
+위 공개 근거는 2026-08-15에 확인했다. 재현성 기준은 토스 OpenAPI `1.2.14` SHA-256 `d29f9079a557c0b6affcec330aa131f93b09fd49932354668e3dc4524cd42180`, overview SHA-256 `abaff9cc15487a61417cf1b79a6777ab550337cd1c53e3a2838cfccd6e660b1d`, KIS 공식 예제 저장소 commit `b093e42ba32d1df5f5ddad7a71cb715cbc800832`다. 공식 한도와 명세는 바뀔 수 있으므로 실제 결정 직전에 다시 확인하고, 공개 문서에 없는 전체 시장 상품 범위·전송 사양·SLA는 P6 계약 견적서와 기술 명세를 증거로 첨부한다.
 
 ## 12. 실행 순서와 단계별 종료 조건
 
 | 단계 | 구현·조사 | 종료 조건 |
 | --- | --- | --- |
-| Gate 0 | KIS·키움·토스·LS와 KRX 승인·코스콤 계약 경로의 시험, 저장, 파생, 재생, 화면 표시, 외부 제공 권리 확인 | 후보별 서면 근거와 허용 범위가 결정 기록에 남음 |
-| P1 | 시험 전용 관측 저장소, NTP 상태, 공통 시계와 데이터 의미표 구현 | 후보 데이터가 run별로 격리되고 NTP offset 100ms 이하, timestamp 원천·정밀도·시간대, venue·session, 봉 시각 표기, adjusted, 정정·취소, 무체결 분과 volume 단위가 확정됨 |
-| P2 | 5종목 KIS·키움·LS WebSocket과 REST, 토스 REST adapter를 동일 관측 규칙으로 구현 | payload mapping, pagination, 401·429·5xx, reconnect 단위 테스트 통과 |
+| Gate 0 | KIS·키움·토스·LS와 KRX 승인·코스콤/NXT 계약 경로의 시험, 저장, 벤치마크, 재생, CI, 내부 표시, 외부 제공과 파생 OHLCV 권리 확인 | 현재 토스는 `RIGHTS_BLOCKED`, KIS 저장·벤치마크는 `UNKNOWN`; 후보별 서면 근거에서 필요한 권리가 `ALLOWED`가 됨 |
+| P1 | 시험 전용 관측 저장소, NTP 상태, 공통 시계와 데이터 의미표 구현 | 코드 기반은 PR #4에서 검증 완료·병합 전. 실제 run의 NTP offset 100ms 이하와 후보별 timestamp·venue·session·봉·정정·무체결 의미가 확정됨 |
+| P2a | 실제 시세를 포함하지 않는 합성 KIS·키움·LS WebSocket/REST와 토스 REST contract adapter 구현 | payload mapping, pagination, 401·quota·5xx, reconnect 단위 테스트 통과 |
+| P2b | Gate 0을 통과한 후보만 실제 read-only adapter에 연결 | credential이 Git·로그·manifest에 없고 contract probe와 권리 범위가 run에 고정됨 |
 | P3 | 같은 5거래일에 공급자를 동시에 관측하고 통제 단절·backfill 수행 | 공급자 지연·정확성·복구 gate를 통과한 shortlist와 탈락 이유가 재현 가능한 증거로 남음 |
 | P4 | replay write와 B2 read를 하나의 run ID로 묶고 shortlist별 5종목 8시간 soak 수행 | 설명되지 않은 불일치 0건, 미복구 gap 0, 누수 없음, 병목 지표 확보 후 5종목 POC 공급자 결정 |
 | P5 | 완전 합성 fixture로 50→200→1,000→실제 master×1.2 B3 수행 | 종목 규모별 포화점, shard·partition·cache 도입 시점 결정 |
@@ -236,4 +239,4 @@ lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, high
 
 P6는 최소 20거래일 동안 계약 universe 일일 coverage 100%, backfill 뒤 설명되지 않은 확정 봉 gap·stale 0건, RPO 0을 요구한다. 10분 전송 중단 뒤 backlog drain과 정상화 RTO는 10분 이내, 계약 가용성은 월 99.9% 이상이어야 한다. `MONTHLY_MARKET_DATA_BUDGET_KRW`는 Gate 0에서 숫자로 승인하고 후보의 feed·라이선스·재배포·회선·운영 비용 합계가 이를 넘으면 탈락한다.
 
-다음 구현의 최소 단위는 P1이다. 관측 저장소가 없으면 후보별 값이 현재 V2 기본키에서 충돌하므로 실제 공급자 호출부터 시작하지 않는다. POC 우승자 결정은 P4 이후, KOSPI 전체 운영 공급자 결정은 P6 이후에만 가능하다.
+다음 순서는 Gate 0 서면 확인과 PR #4 병합이다. 기다리는 동안 P2a 합성 adapter contract test는 진행할 수 있지만, 실제 공급자 호출·저장·벤치마크는 필요한 권리가 `ALLOWED`가 된 후보에만 연다. POC 우승자 결정은 P4 이후, KOSPI 전체 운영 공급자 결정은 P6 이후에만 가능하다. 현재 운영 우승자는 없다.
