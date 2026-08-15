@@ -496,9 +496,13 @@ VU 100을 실제 사용자 100명과 같다고 볼 수는 없습니다. 실제 �
 
 ## 다음 행동. 공식 문서의 선택을 실제 데이터로 검증하기
 
-실제 공급자 호출 전 Gate 0에서 시험·저장·벤치마크·재생·CI·내부 표시·외부 제공 권리를 각각 서면 근거로 확정하고, 파생 OHLCV 허용 범위도 따로 묻습니다. 하나라도 `UNKNOWN`이면 해당 사용을 시작하지 않고, 최소한 저장과 벤치마크가 `ALLOWED`인 후보만 실제 5종목 시험에 올립니다.
+실제 공급자 호출 전 Gate 0에서 시험 호출 자체가 허용되는지 먼저 서면으로 확인합니다. 이어 `storage`, `benchmark`(허용된 파생 포함), `replay`, `ci`, `internalDisplay`, `externalDistribution` 여섯 권리를 각각 확정합니다. 하나라도 `UNKNOWN`이면 실제 run을 시작하지 않고, 최소한 `storage`와 `benchmark`가 `ALLOWED`인 후보만 5종목 scored 시험에 올립니다. 사용하지 않는 purpose는 `DENIED`여도 됩니다.
 
-공급자별 관측을 기존 `minute_candles`에 섞지 않기 위한 P1 기반은 [별도 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)에서 unit 116개·PostgreSQL 통합 51개, 패키징과 격리 컨테이너 smoke까지 검증했고 아직 병합 전입니다. 실제 NTP 표본·공급자별 timestamp/venue/session/정정·무체결 의미와 권리 증거는 채워지지 않았습니다. P1 병합과 Gate 0 서면 확인은 병행하고, 기다리는 동안 실제 시세를 쓰지 않는 합성 contract test까지 진행할 수 있습니다. 실제 adapter 연결과 5종목 관측만 권리 승인 뒤 실행합니다.
+공급자별 관측을 기존 `minute_candles`에 섞지 않기 위한 P1 기반은 [별도 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)에서 unit 126개·PostgreSQL 통합 57개, 패키징과 격리 컨테이너 smoke까지 검증했고 아직 병합 전입니다. 실제 NTP 표본·공급자별 timestamp/venue/session/정정·무체결 의미와 권리 증거는 채워지지 않았습니다. P1 병합과 Gate 0 서면 확인은 병행하고, 기다리는 동안 실제 시세를 쓰지 않는 합성 contract test까지 진행할 수 있습니다. 실제 adapter 연결과 5종목 관측만 권리 승인 뒤 실행합니다.
+
+후보를 비교할 때는 빠른 공급자에만 더 자주 물어보지 않습니다. 공통 점수 run은 공급자마다 다섯 종목을 합쳐 총 1 TPS로 round-robin하고, 각 target candle을 분 종료 뒤 10분 동안 계속 관측합니다. 장 종료 30분 뒤와 다음 거래일 13:30에도 같은 봉을 다시 확인합니다. KIS의 T+5초·T+65초 조회나 토스의 더 촘촘한 polling은 원인을 분석하는 별도 diagnostic run으로만 남기고 공급자 점수에는 섞지 않습니다. 공통 스케줄러·시계·manifest가 깨진 날만 모든 후보에서 무효화합니다. 정상 요청의 timeout·오류·봉 부재는 해당 공급자의 실패 증거로 남기며 재실행으로 지우지 않습니다.
+
+두 공급자 응답에는 확정 여부나 공급자 revision이 없습니다. 따라서 polling 사이에 OHLCV가 바뀐 순서를 로컬 observation sequence로 기록할 뿐, 공급자가 보장한 `isFinal`이나 revision처럼 표현하지 않습니다. 토스는 venue 선택·응답 필드가 없어 그 의미가 `UNKNOWN`인 동안 KIS의 KRX `J` 결과와 직접 OHLCV 점수를 비교하지 않습니다.
 
 ### KIS — 합성 contract는 먼저, 실제 수집은 권리 승인 뒤
 
@@ -506,23 +510,25 @@ VU 100을 실제 사용자 100명과 같다고 볼 수는 없습니다. 실제 �
 2. **먼저 합성 contract test를 만듭니다.** 비밀이나 실제 시세 없이 `H0STCNT0`의 46필드 묶음, 등록 ACK, heartbeat, 잘못된 필드 수, REST 401·공급자 오류와 pagination을 재현합니다.
 3. **승인 뒤 `KisMarketDataProvider`를 연결합니다.** KRX 정규장은 `H0STCNT0`과 시장 구분 `J`로 고정하고 하나의 WebSocket에서 5종목을 구독합니다. 통합 채널을 KRX 데이터로 간주하지 않습니다.
 4. **체결 payload의 한계를 보존합니다.** 영업일·체결 시각은 초 단위이고 공급자 event ID나 밀리초 sequence가 없습니다. 연결 epoch와 wire-local 수신 순번을 별도 관측값으로 남기되 이를 공급자 식별자로 꾸미지 않고, 지연도 약 1초 양자화 구간으로 표현합니다.
-5. **REST 복구 포트를 둡니다.** 당일 30봉 API와 실전 전용 일별 120봉 API를 구분합니다. 현재 첫 행은 다음 체결 전까지 바뀔 수 있으므로 T+5초와 T+65초에 다시 관측하고, 시작·재연결 gap은 종료된 봉 기준으로 대조합니다.
+5. **REST 복구 포트를 둡니다.** 당일 30봉 API와 실전 전용 일별 120봉 API를 구분합니다. 현재 첫 행은 다음 체결 전까지 바뀔 수 있으므로 원인 분석용 diagnostic에서 T+5초와 T+65초에 다시 관측하고, 시작·재연결 gap은 종료된 봉 기준으로 대조합니다. 이 두 시점의 결과는 공통 1 TPS 점수에 섞지 않습니다.
 6. **현재 분의 gap을 남기지 않습니다.** REST 조회 중 WebSocket 체결을 버퍼링하고, 연결이 끊겼던 현재 bucket은 `dirty`로 표시합니다. 분이 끝난 뒤 해당 봉을 REST로 다시 대조하기 전에는 완전한 봉으로 취급하지 않습니다.
 7. **한 연결·한 writer로 시작합니다.** 등록 ACK, heartbeat, approval·token 갱신, 제한된 지수 backoff와 jitter, `rt_cd`·`msg_cd`와 HTTP 상태, 종목별 마지막 체결·확정 봉·gap을 기록합니다. KIS의 공식 quota 신호는 `EGW00201`이며 HTTP 429나 `Retry-After`를 항상 준다고 가정하지 않습니다.
-8. **같은 5거래일에서 검증합니다.** payload 변환, 중복, 역순, 부분 구독 실패와 재연결을 자동 테스트한 뒤 같은 다섯 종목을 동시에 관측합니다. 통제 단절, REST 복구, OHLCV 대조와 8시간 soak까지 통과해야 5종목 POC 공급자로 결정합니다.
+8. **같은 5거래일에서 검증합니다.** payload 변환, 중복, 역순, 부분 구독 실패와 재연결을 자동 테스트한 뒤 같은 다섯 종목을 동시에 관측합니다. 30초·2분·10분 통제 단절을 각각 최소 3회 수행하고 REST 복구, OHLCV 대조와 8시간 soak까지 통과해야 5종목 POC 공급자로 결정합니다.
 
 ### 토스 — 합성 contract만 가능하고 실제 사용은 권리 차단
 
 1. **서면 예외 승인 전 실제 호출과 저장을 하지 않습니다.** 공식 안내의 본인 매매 목적 밖에 GrowAnt 내부 벤치마크가 포함되는지, 허용 저장 기간과 결과 공개 범위를 먼저 확인합니다.
 2. 합성 응답으로 `symbol`, `interval=1m`, `count`, inclusive `before`, `nextBefore`, `adjusted` contract와 중복 경계를 테스트합니다. KIS 원시 체결 집계와 비교할 때는 `adjusted=false`를 사용합니다.
 3. 승인되면 기존 체결 포트에 가짜 체결을 만들지 않고 `HistoricalMinuteCandleSource` 같은 공급자 집계 봉 전용 경계를 둡니다. OAuth secret은 secret manager에만 두고 고정 outbound IP를 허용 목록에 등록합니다.
-4. 중앙 수집기가 다섯 종목을 1초 간격 round-robin하면 평균·순간 모두 1 TPS입니다. 다섯 요청을 동시에 보내면 순간 5 TPS입니다. 둘 다 차트 그룹 20 TPS보다 낮지만 실제 `X-RateLimit-*`와 429의 `Retry-After`를 기록합니다.
+4. 공통 점수 run에서는 중앙 수집기가 다섯 종목을 1초 간격으로 round-robin해 평균·순간 모두 총 1 TPS를 유지합니다. 별도 diagnostic에서 종목당 1 TPS를 쓰면 전체 5 TPS이므로 공통 점수와 다른 run ID로 격리합니다. 둘 다 문서상 차트 그룹 20 TPS보다 낮지만 실제 `X-RateLimit-*`와 429의 `Retry-After`를 기록합니다.
 5. 진행 중 봉이 언제 처음 나타나고 언제 더 이상 바뀌지 않는지 측정합니다. 응답에 없는 `tradeCount`와 `isFinal`을 `0`·`true`로 꾸며 저장하지 않습니다.
 6. 같은 종목·시각·`adjusted=false` 조건에서 승인된 독립 기준과 비교합니다. 본인 매매 목적 제한이 유지되는 동안은 기술 점수와 관계없이 GrowAnt 공급자에서 탈락시킵니다.
 
 현재 기본키 `(ticker, bucket_start)`는 공급자·시장·세션·주기를 구분하지 못합니다. 따라서 KIS 장애 때 토스 값을 같은 테이블에 자동 fallback으로 섞지 않습니다. 다중 공급자 원본이 필요해지면 기존 V2 migration을 수정하지 않고 새 migration과 canonical 선택 계층을 별도로 설계해야 합니다.
 
 공급자 endpoint를 k6로 직접 가압하지 않습니다. 실제 공급자는 허가된 정상 호출량으로 지연·누락·복구를 관측하고, k6는 같은 run에서 GrowAnt의 수집 write와 JWT read가 함께 걸릴 때 서버·DB가 버티는지만 측정합니다. 합격 조건은 실제 장의 미복구 gap 0건, 재연결·백필 완료 시간 측정, 10분 단계 부하와 8시간 안정성 시험이며 아래의 짧은 로컬 k6 기준선에는 포함되지 않습니다.
+
+따라서 k6 숫자 하나로 증권사를 고르지는 않습니다. 공급자 점수는 권리·정확성·게시 지연·누락·복구로 내고, k6는 그 adapter를 붙인 GrowAnt가 같은 canonical fixture에서 목표 부하를 처리하는지 별도 gate로 판정합니다. 현재 계획의 25→50→100 RPS ramp는 탐색용이므로, 최종 판단 전에는 25·50·100 RPS마다 warm-up과 10분 고정 부하 plateau, cooldown을 분리해 최소 3회 반복하고 8시간 read/write soak를 수행합니다.
 
 ---
 
@@ -565,7 +571,7 @@ VU 100을 실제 사용자 100명과 같다고 볼 수는 없습니다. 실제 �
 2. **서버는 얼마나 저장할 수 있는가:** 현재 기본키와 revision upsert는 5종목 MVP의 중복 저장을 막습니다. 실측한 157.118B/봉을 단순 환산하면 5종목 1년은 약 77.21MB지만, 운영 용량에는 WAL 보관·백업·복제·vacuum 여유와 원시 체결 저장 여부를 추가해야 합니다.
 3. **사용자가 늘면 어떻게 대응할 것인가:** 사용자마다 증권사 연결을 만들지 않고 중앙 수집기 하나가 받은 분봉을 DB·캐시·API가 나누어 제공합니다. 현재 첫 화면은 1일만 받고, 과거 페이지 추가 로딩은 다음 클라이언트 변경으로 구현합니다. B1에서 5일·100 VU가 실패했으므로 캐시와 수평 확장보다 먼저 긴 일괄 조회를 기본 경로에서 제거하고, 다음 시험에서 DB pool 대기·직렬화 CPU·gzip·query 지표를 분리해 측정합니다.
 
-다음 순서는 `Gate 0 서면 확인 + P1 관측 기반 병합을 병행 → 대기 중 합성 KIS·토스 contract test → 허가된 후보만 실제 adapter와 같은 5거래일 관측 → GrowAnt B2 read/write k6와 8시간 soak → 5종목 POC 역할 결정`입니다. 그 뒤 완전 합성 fixture로 50·200·1,000종목을 재생하고, KOSPI 전체 운영 공급자는 개인 API가 아니라 계약 universe·재배포 권리·SLA를 가진 정식 피드를 최소 20거래일 별도로 검증해 결정합니다.
+다음 순서는 `Gate 0 서면 확인 + P1 관측 기반 병합을 병행 → 대기 중 합성 KIS·토스 contract test → 역할별 scorecard와 checksum 동결 → 허가된 후보만 실제 adapter와 같은 5거래일 관측 → GrowAnt B2 read/write k6와 8시간 soak → 5종목 POC 역할 결정`입니다. 그 뒤 완전 합성 fixture로 50·200·1,000종목을 재생하고, KOSPI 전체 운영 공급자는 개인 API가 아니라 계약 universe·재배포 권리·SLA를 가진 정식 피드를 최소 20거래일 별도로 검증해 결정합니다.
 
 ### 다른 사람에게 1분 안에 설명한다면
 

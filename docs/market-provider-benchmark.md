@@ -28,7 +28,7 @@
 
 다음 중 하나라도 충족하지 못하면 속도 점수를 계산하지 않는다.
 
-- 시험·저장·내부 표시 범위가 서면으로 확인되지 않음
+- 실제 공급자 시험 호출 자체가 서면 범위에 없거나, 관측 run에 필요한 `storage`·`benchmark` 권리가 `ALLOWED`가 아님
 - 공개 운영 후보인데 KOSPI 전체 제공 또는 재배포 계약이 불가능함
 - 같은 거래일의 확정 봉에 미복구 gap이 남음
 - 공급자 봉과 자체 집계 봉의 OHLCV가 설명 없이 다름
@@ -53,20 +53,43 @@ candle observation: bucket_start + provider_revision 또는 observation_sequence
 fault/recovery event: fault_id + event_sequence
 ```
 
-관측 저장소는 동일 체결의 중복 수신, 같은 봉의 반복 polling과 revision, 재연결 전후 사건을 덮어쓰지 않는다. PR #4의 P1은 header·URL·credential·raw payload를 저장하지 않고 typed observation과 안전한 count/checksum manifest만 남긴다. 여섯 권리 판단은 모두 `UNKNOWN`이 아니어야 하고 이 시험에 필요한 저장·벤치마크는 `ALLOWED`여야 한다. 재생·CI·내부 표시·외부 제공은 실제로 사용할 때만 `ALLOWED`인 경로를 열며 `DENIED`인 용도에는 데이터를 쓰지 않는다. 허용되지 않은 실제 가격·시각열 대신 복원할 수 없는 완전 합성 fixture와 허용된 집계 지표만 사용한다. 시장 데이터는 개인정보가 아니므로 단순 비식별화가 이용 권리를 새로 만들지 않는다.
+관측 저장소는 동일 체결의 중복 수신, 같은 봉의 반복 polling과 revision, 재연결 전후 사건을 덮어쓰지 않는다. PR #4의 P1은 header·URL·credential·raw payload를 저장하지 않고 typed observation과 안전한 count/checksum manifest만 남긴다. 저장·벤치마크·재생·CI·내부 표시·외부 제공의 여섯 권리 판단은 모두 `UNKNOWN`이 아니어야 한다. 다만 여섯 판단이 모두 `ALLOWED`일 필요는 없다. run manifest에 실제로 수행할 purpose를 먼저 고정하고 그 purpose만 `ALLOWED`여야 하며, 사용하지 않는 purpose는 `DENIED`여도 된다. `DENIED`인 용도에는 데이터를 쓰지 않는다. 허용되지 않은 실제 가격·시각열 대신 복원할 수 없는 완전 합성 fixture와 허용된 집계 지표만 사용한다. 시장 데이터는 개인정보가 아니므로 단순 비식별화가 이용 권리를 새로 만들지 않는다.
 
 ## 4. 공급자에는 정상 사용량만 적용
 
-k6로 증권사나 거래소 endpoint를 직접 가압하지 않는다. 실제 공급자는 Gate 0을 통과한 뒤 같은 장비와 네트워크에서 정상 사용량으로 관측한다.
+k6로 증권사나 거래소 endpoint를 직접 가압하지 않는다. 실제 공급자는 Gate 0을 통과한 뒤 같은 장비와 네트워크에서 정상 사용량으로 관측한다. REST 관측은 순위에 쓰는 공통 scored protocol과 원인 분석에만 쓰는 공급자별 diagnostic protocol을 분리한다.
+
+### 공통 scored REST protocol
+
+- 모든 후보는 후보 하나당 다섯 종목을 합쳐 **총 1 TPS**로 제한하고 같은 ticker 순서의 round-robin을 사용한다. 종목당 1 TPS로 해석하지 않는다.
+- 미리 고정한 target candle마다 분 종료 뒤 10분 동안 관측을 계속하고 조기 종료하지 않는다.
+- 장 종료 30분 뒤와 다음 거래일 13:30 KST에 같은 target candle set을 다시 조회한다.
+- 분 종료 30초 이후 3회 연속 같은 값이면 `provisionally_stable`로만 표시한다. 10분 관측과 두 차례 재조회가 끝나기 전에는 확정 안정화로 판정하지 않는다.
+- 다섯 종목 round-robin 때문에 실제 게시 시각은 `마지막 미관측 < 실제 게시 ≤ 최초 관측` 구간으로 기록하고 ticker 순번을 함께 남긴다.
+- 이 공통 run에서 나온 결과만 후보 간 게시 지연·안정화 점수에 사용한다.
+
+### 공급자별 high-precision diagnostic protocol
+
+- 공식 호출 한도와 서면 허용 범위 안에서 공급자 특성에 맞는 별도 pace를 사용할 수 있다.
+- diagnostic run은 공통 run과 다른 `run_id`, manifest와 결과 경로를 사용하고 공급자 간 점수·순위 계산에는 넣지 않는다.
+- 더 촘촘한 polling 결과는 공통 1 TPS 관측의 검열 구간이나 누락 원인을 설명하는 보조 증거일 뿐, 해당 공급자의 scored latency를 대신하지 않는다.
+
+공통 운영 조건:
 
 - KIS·키움·LS: 공급자당 물리 WebSocket 한 개로 같은 5종목 구독
-- REST 분봉 안정성 비교: 공급자별 1 TPS 이하의 공통 pace 사용
-- 토스 1 TPS round-robin: 종목별 관측 간격이 5초이므로 `마지막 미관측 < 실제 게시 ≤ 최초 관측` 구간과 ticker 순번 회전을 함께 기록
-- 게시 지연 정밀 측정: 공급자별 공식 한도와 서면 허용 범위 안에서 별도 pace를 정하고 공통 1 TPS 결과와 섞지 않음
 - 2xx·401·429·5xx, 공급자 body 오류 코드, 실제로 받은 `Retry-After`와 rate-limit header 기록. KIS는 `EGW00201`을 공식 quota 신호로 사용
 - 인증 발급 endpoint는 벤치마크 반복 대상에서 제외하고 토큰을 재사용
 
-REST 봉은 새 분이 끝난 뒤 10분 동안 1 TPS round-robin 관측을 계속한다. 분 종료 30초 이후 3회 연속 같은 값이면 `provisionally_stable`로 표시하지만 조기 종료하지 않는다. `last_changed_at`은 10분 관측 창이 끝나야 확정하고, 장 종료 30분 뒤와 다음 거래일 13:30 KST에 공급자 봉과 독립 기준을 다시 대조한다. 이후 값이 달라지면 late revision으로 기록하고 기존 안정화 판정을 무효화한다.
+provider/day별 scored run의 manifest에는 비교 대상과 처리 마감을 서로 다른 필드로 고정한다.
+
+- `target_trade_date`, `target_session`, `target_candle_set`: 어느 거래일·세션의 어떤 ticker·bucket을 판정할지 정한다. 관측이 늦거나 독립 기준 도착이 지연돼도 이 집합을 사후 변경하지 않는다.
+- `observation_deadline`: 10분 관측, 장 종료 30분 뒤 재조회와 다음 거래일 13:30 재조회를 포함해 공급자 관측을 언제 닫을지 정한다. 이후 도착한 값은 원 run에 소급해 점수를 바꾸지 않고 별도 late evidence로 남긴다.
+- `adjudication_deadline`: 독립 기준과 권리상 허용된 증거로 gap·revision·OHLCV를 언제까지 판정할지 정한다. 관측 마감과 같다고 가정하지 않는다.
+- `run_window`: target session의 bucket과 다음 거래일 13:30까지의 모든 예정 요청 시각을 포함하되 target candle set은 넓히지 않는다. exclusive `window_end`에 둘 고정 completion grace도 결과를 보기 전에 scorecard에서 정한다.
+
+관측 마감까지 보이지 않은 봉은 `not_observed_within_window`, 독립 기준 판정이 끝나지 않은 봉은 `pending_adjudication`으로 구분한다. 두 상태를 gap 0이나 성공으로 바꾸지 않으며 adjudication deadline까지 판정되지 않으면 scorecard의 사전 정의된 결측 규칙을 적용한다. `last_changed_at`은 예정된 관측 창 안에서만 계산한다. 장 종료 또는 다음 거래일 재조회에서 값이 달라지면 late revision으로 기록하고 기존 안정화 판정을 무효화한다.
+
+같은 matched trading day를 모든 후보에서 무효화하는 경우는 공통 harness가 요청을 발행하지 못했거나 clock·run manifest가 깨진 경우로 한정한다. 정상 발행된 요청의 timeout, 공급자 오류와 봉 부재는 그 후보의 `not_observed_within_window` 또는 fault로 남기며 재실행으로 지우지 않는다.
 
 기록할 시각과 상태:
 
@@ -146,6 +169,8 @@ replay는 GrowAnt 내부 수집·DB 확장성만 증명한다. 공급자의 KOSP
 
 기본 executor는 `ramping-arrival-rate`이며 10분 동안 25→50→100 RPS를 거쳐 0으로 내린다. VU를 실제 사용자 수로 해석하지 않고 목표 RPS와 요청 분포로 용량을 표현한다.
 
+이 기본 run은 부하가 계속 변하므로 25·50·100 RPS의 정상상태 처리량이나 포화점을 증명하지 않는다. 공급자 adapter를 최종 비교하기 전에는 각 목표 RPS마다 warm-up 2분, 고정 `constant-arrival-rate` 측정 plateau 10분, cooldown 2분을 분리하고 최소 3회 반복하는 `GROWANT_LOAD` scorecard를 별도로 동결한다. 이 결과는 GrowAnt 서버·DB 회귀 판정이며 공급자 품질 총점에는 넣지 않는다.
+
 예시:
 
 ```bash
@@ -192,23 +217,37 @@ k6의 응답 검사는 HTTP 200, `success=true`, 최소 봉 수까지다. 시간
 
 50·200·전체 universe 시험 전에는 각 규모의 결정적 종목 master, 카탈로그, 추적 대상과 seed/replay DB를 격리된 환경에 준비한다. 현재 기본 카탈로그가 5종목인 서버에 임의의 1,000개 ticker를 보내는 것은 B3가 아니라 4xx 오류 시험이다.
 
-## 10. 최종 판정
+## 10. 최종 판정 초안과 scorecard 동결 gate
 
-탈락 조건을 통과한 후보만 점수화한다. 서로 기능이 다른 후보를 한 표에 억지로 넣지 않고 다음 세 역할을 별도로 판정한다.
+탈락 조건을 통과한 후보만 점수화한다. 서로 기능이 다른 후보를 한 표에 억지로 넣지 않고 다음 세 역할을 별도로 판정한다. 아래 hard gate와 영역 비중, 선형 환산식, worst-day·일별 중앙값 판정과 3점 동점 폭은 이 계획의 문서화된 기준선이다. 다만 하위 metric과 good·bad 값까지 채운 실행 가능한 frozen scorecard는 아직 아니다.
 
 | 판정 역할 | 필수 hard gate | 점수 영역 |
 | --- | --- | --- |
 | 5종목 실시간 POC | WebSocket 체결 age 상한 p95 2초·p99 5초, 확정 봉 미복구 gap 0, 재연결 10초·최대 10분/50 bucket 백필 60초, 8시간 누수 없음 | 정확성·복구 40, 지연·연결 30, 백필 20, 구현 복잡성 10 |
-| 완성 분봉 비교군 | 1 TPS·5초 polling의 최초 관측 검열 상한 p95 15초, 마지막 변경 p95 30초, 독립 기준과 설명되지 않은 OHLCV 불일치 0 | 정확성 40, 게시·안정화 30, 과거 범위·pagination 20, 구현 복잡성 10 |
+| 완성 분봉 비교군 | 공급자당 총 1 TPS·5종목 round-robin(종목별 약 5초)의 최초 관측 검열 상한 p95 15초, 마지막 변경 p95 30초, 독립 기준과 설명되지 않은 OHLCV 불일치 0 | 정확성 40, 게시·안정화 30, 과거 범위·pagination 20, 구현 복잡성 10 |
 | KOSPI 전체 운영 feed | 계약 universe·권리·SLA와 P6의 coverage·RPO/RTO·비용 gate 전부 충족 | coverage·SLA 30, 정확성·복구 25, 지연 15, 권리·총비용 20, 운영 복잡성 10 |
 
-세 역할의 공통 gate는 시험·저장·표시 권리, 독립 기준 정확성 판정, 비밀정보 보호, timestamp 의미 확정과 관측 서버 NTP 절대 offset 100ms 이하다. GrowAnt adapter를 붙인 역할은 추가로 k6 HTTP 오류율 1% 미만, 기본 응답 검사 99% 초과, dropped iteration 0과 임시 API p95 200ms 미만을 통과해야 한다. 이 API 수치는 운영 SLA가 아니라 같은 환경의 회귀선이다.
+`GROWANT_LOAD`는 네 번째 공급자 역할이 아니라 후보 adapter와 GrowAnt 서버의 별도 수용성 gate다. 같은 canonical fixture와 서버 조건에서 수행하며 그 p95나 처리량을 KIS·토스 등 공급자 품질 점수에 더하지 않는다.
 
-첫 실제 관측 전에 역할별 `benchmark-scorecard-<role>.json`에 각 지표의 방향, good·bad 경계, 필수·선택 여부와 비용 상한을 기록하고 SHA-256을 남긴다. 역할이 제공하지 않는 기능은 평가 대상이 아니며, 해당 역할의 필수 지표가 없을 때만 그 역할에서 탈락한다. 결과를 본 뒤 경계를 바꾸면 새 run으로 다시 시작한다.
+세 역할의 공통 gate는 실제 공급자 시험 호출 허가와 `storage`, `benchmark`(허용된 파생 포함), `replay`, `ci`, `internalDisplay`, `externalDistribution` 여섯 권리 판단, 독립 기준 정확성 판정, 비밀정보 보호, timestamp 의미 확정과 관측 서버 NTP 절대 offset 100ms 이하다. 여섯 판단에는 `UNKNOWN`을 허용하지 않고, 실제 run이 사용하는 purpose만 `ALLOWED`여야 하며 사용하지 않는 purpose는 `DENIED`여도 된다. scored 관측 run은 최소 `storage`와 `benchmark`가 `ALLOWED`여야 한다. GrowAnt adapter를 붙인 역할은 추가로 k6 HTTP 오류율 1% 미만, 기본 응답 검사 99% 초과, dropped iteration 0과 임시 API p95 200ms 미만을 통과해야 한다. 이 API 수치는 운영 SLA가 아니라 같은 환경의 회귀선이다.
+
+현재는 역할별 하위 metric 목록과 각 metric의 good·bad 경계, 정성 항목 rubric, percentile·95% 신뢰구간의 구체 알고리즘이 확정되지 않았다. 따라서 `benchmark-scorecard-<role>.json`을 freeze하거나 실제 관측을 scored run으로 시작할 수 없다.
+
+첫 scored run 전에 다음 항목을 모두 채워 리뷰하고 scorecard 파일과 SHA-256을 고정한다.
+
+- 역할, 후보 자격, hard gate와 실제 run에서 사용하는 여섯 권리 purpose
+- 하위 metric의 ID, 정의, 단위, 원천, 방향, good·bad 경계와 필수·선택 여부
+- 정성 metric의 선택지별 판정 근거와 점수 rubric
+- timestamp 양자화·검열 구간·결측·late evidence 처리 규칙
+- 문서화된 worst-day hard gate와 일별 중앙값을 유지하면서 provider/day·ticker·bucket·fault repetition을 합치는 순서와 percentile·신뢰구간 계산 알고리즘
+- 문서화된 영역 가중치와 3점 동점 폭을 유지하면서 비용 상한, 탈락·미제공 기능 처리 규칙
+- target session/candle set, observation/adjudication deadline, 호출 pace, 통제 단절 반복과 실행 환경
+
+역할이 제공하지 않는 기능을 평가 대상에서 뺄지 필수 결측으로 탈락시킬지도 metric별로 동결한다. 결과를 본 뒤 어느 항목이든 바꾸면 기존 run을 재채점하지 않고 새 scorecard checksum으로 새 run을 시작한다. diagnostic run은 scorecard 입력에서 제외한다.
 
 공급자 시각이 초 단위라면 실제 age를 단일 숫자로 만들지 않고 timestamp 양자화와 NTP 불확도를 포함한 구간으로 계산해 상한을 판정한다. 통제 단절은 30초·2분·10분을 각각 최소 3회 수행하고 장중과 종가 단일가 구간을 모두 포함한다. 단절 동안 거래가 없던 bucket은 독립 기준으로 분류하며 누락량을 임의로 0으로 만들지 않는다.
 
-lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, higher-is-better 지표는 반대 방향의 선형식으로 환산한다. 영역 점수는 사전에 정한 하위 지표의 산술평균, 총점은 역할별 비중의 가중합이다. 역할별 hard gate 결측은 해당 역할 탈락, 선택 점수 지표 결측은 0점으로 처리한다. 5거래일 hard gate는 가장 나쁜 날로 판정하고 점수는 일별 중앙값을 사용하며 min·median·max와 95% 신뢰구간을 함께 공개한다. 비용은 실제 universe에서의 연간 총비용으로 비교한다.
+lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, higher-is-better 지표는 반대 방향의 선형식으로 환산한다. 영역 점수는 사전에 정한 하위 지표의 산술평균, 총점은 역할별 비중의 가중합이다. 역할별 hard gate 결측은 해당 역할 탈락, 선택 점수 지표 결측은 0점으로 처리한다. 5거래일 hard gate는 가장 나쁜 날로 판정하고 점수는 일별 중앙값을 사용하며 min·median·max와 95% 신뢰구간을 함께 공개한다. 신뢰구간의 표본 단위·재표본화 알고리즘과 각 하위 metric의 good·bad는 scorecard 동결 때 확정한다. 비용은 동일한 universe와 권리 범위에서의 연간 총비용으로 비교한다.
 
 결정 기록에는 원본 요약, scorecard checksum, commit SHA, 환경, 거래일, 종목 master checksum, 실행 순서, 호출 한도, 문서 확인일·버전, 실패와 제외 이유를 함께 남긴다. 점수 차가 3점 이하면 우승자를 강제로 정하지 않고 표본을 추가하거나 계약 조건으로 동률을 해소한다. 5종목 POC 우승자와 KOSPI 전체 운영 공급자가 다르면 두 역할을 분리한다.
 
@@ -231,11 +270,11 @@ lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, high
 | P1 | 시험 전용 관측 저장소, NTP 상태, 공통 시계와 데이터 의미표 구현 | 코드 기반은 PR #4에서 검증 완료·병합 전. 실제 run의 NTP offset 100ms 이하와 후보별 timestamp·venue·session·봉·정정·무체결 의미가 확정됨 |
 | P2a | 실제 시세를 포함하지 않는 합성 KIS·키움·LS WebSocket/REST와 토스 REST contract adapter 구현 | payload mapping, pagination, 401·quota·5xx, reconnect 단위 테스트 통과 |
 | P2b | Gate 0을 통과한 후보만 실제 read-only adapter에 연결 | credential이 Git·로그·manifest에 없고 contract probe와 권리 범위가 run에 고정됨 |
-| P3 | 같은 5거래일에 공급자를 동시에 관측하고 통제 단절·backfill 수행 | 공급자 지연·정확성·복구 gate를 통과한 shortlist와 탈락 이유가 재현 가능한 증거로 남음 |
+| P3 | 같은 5거래일에 공급자를 동시에 관측하고 30초·2분·10분 통제 단절을 각각 최소 3회 수행한 뒤 backfill | 공통 scored REST protocol과 별도 diagnostic 결과, 공급자 지연·정확성·복구 gate를 통과한 shortlist와 탈락 이유가 재현 가능한 증거로 남음 |
 | P4 | replay write와 B2 read를 하나의 run ID로 묶고 shortlist별 5종목 8시간 soak 수행 | 설명되지 않은 불일치 0건, 미복구 gap 0, 누수 없음, 병목 지표 확보 후 5종목 POC 공급자 결정 |
 | P5 | 완전 합성 fixture로 50→200→1,000→실제 master×1.2 B3 수행 | 종목 규모별 포화점, shard·partition·cache 도입 시점 결정 |
 | P6 | Gate 0을 통과한 전체 시장 후보를 동일 universe에서 비공개 shadow 수집하고 장애 훈련 | 아래 전체 시장 gate와 비용 상한을 충족하거나, 시험하지 못한 후보의 제외 근거가 기록됨 |
-| Decision | KOSPI 전체 운영 공급자를 별도 ADR로 결정 | 점수 차 3점 초과 또는 추가 표본·계약 조건으로 동률 해소 |
+| Decision | KOSPI 전체 운영 공급자를 별도 ADR로 결정 | 점수 차 3점 초과 또는 추가 표본·계약 조건으로 동률을 해소하고 선택·제외 근거가 재현 가능함 |
 
 P6는 최소 20거래일 동안 계약 universe 일일 coverage 100%, backfill 뒤 설명되지 않은 확정 봉 gap·stale 0건, RPO 0을 요구한다. 10분 전송 중단 뒤 backlog drain과 정상화 RTO는 10분 이내, 계약 가용성은 월 99.9% 이상이어야 한다. `MONTHLY_MARKET_DATA_BUDGET_KRW`는 Gate 0에서 숫자로 승인하고 후보의 feed·라이선스·재배포·회선·운영 비용 합계가 이를 넘으면 탈락한다.
 
