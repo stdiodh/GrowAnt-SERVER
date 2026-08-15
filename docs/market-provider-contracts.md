@@ -173,11 +173,13 @@ adjusted=false
 
 ### Gate 0: 이용 권리
 
-실제 API 호출 전에 각 공급자로부터 시험, 선택된 원시 필드 저장, 파생 OHLCV 생성, 장애 replay, 내부 표시, CI 사용 범위와 보존기간을 서면으로 확인한다. 외부 사용자 차트와 재배포 권리는 별도 계약 대상으로 본다.
+실제 API 호출 전에 각 공급자로부터 시험 호출 자체의 허용 범위를 먼저 확인한다. 이어 PR #4의 canonical 여섯 권리인 `storage`, `benchmark`(허용된 파생 포함), `replay`, `ci`, `internalDisplay`, `externalDistribution`과 보존기간을 서면으로 확인한다. 외부 사용자 차트와 재배포 권리는 별도 계약 대상으로 본다.
 
 - KIS 개인 약관과 토스 공개 이용 안내만으로 GrowAnt 사용자 대상 시세 제공 권리가 생기지 않는다.
 - 호출이 무과금이거나 계좌 고객에게 열려 있다는 사실은 저장·재배포 허가가 아니다.
 - 승인 근거가 없으면 실제 P2b run을 활성화하지 않는다.
+
+run의 canonical rights bundle은 위 여섯 권리를 각각 `ALLOWED` 또는 `DENIED`로 확정한다. 그 run이 실제로 사용하는 권리는 모두 `ALLOWED`여야 하고, scored 관측 run은 최소 `storage`와 `benchmark`가 `ALLOWED`여야 한다. 사용하지 않는 내부 표시·외부 제공 등의 권리는 `DENIED`여도 되지만 `UNKNOWN`은 어떤 항목에도 허용하지 않는다. 시험 호출 허가는 이 여섯 enum 밖의 선행조건으로 별도 증거를 남긴다.
 
 권리만으로 충분하지 않다. 별도 [P1 관측 저장소 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)의 activation 조건에 맞춰 venue, session, timestamp source·정밀도·zone, 수정주가, 정정, 무체결 분, volume 의미, benchmark spec과 clock 상태도 모두 확정해야 한다. 하나라도 `UNKNOWN`이면 live run을 시작하지 않는다.
 
@@ -191,16 +193,31 @@ adjusted=false
 
 - 종목: `005930`, `000660`, `035720`, `035420`, `005380`
 - 기간: 동일한 5개 독립 거래일
-- 구간: 각 거래일의 동일한 공식 시장 session window; auction·시간외 포함 여부를 명시
-- KIS: `H0STCNT0` 5종목 연속 수신, KRX REST `J`, `bucket_end + 5초`와 `bucket_end + 65초` 대조
-- 토스: venue 의미 확인 후 `1m`, `adjusted=false`, 5종목을 종목당 1초 cadence로 poll하되 chart 한도의 25% 이하
-- 복구: 거래일당 사전 정의한 한 번의 연결 단절·재구독 시나리오
-- 무효 조건: clock error budget 초과, 권리·semantics 변경, rate-limit 위반, 종목·window 누락
+- 공통 점수 cadence: 공급자별 총 `1 TPS`의 고정 pace로 5종목을 round-robin한다. 즉 한 공급자에 매초 한 종목만 요청하고, 정상 순환에서 각 종목은 약 5초마다 요청한다.
+- 공통 점수 관측: 각 target candle의 분 종료 뒤부터 `bucket_end + 10분`까지 위 1 TPS round-robin을 중단 없이 유지한다. 이후 모든 공급자에 같은 `session_close + 30분`, 다음 거래일(`T+1`) `13:30 Asia/Seoul` snapshot을 사용한다. T+1 뒤 공급자 수정은 원 run의 관측값을 소급 변경하지 않고 late evidence로 분리한다.
+- 복구: WebSocket 역할은 연결을, REST 역할은 poller의 network path를 `30초`, `2분`, `10분` 동안 계획대로 차단한다. 각 지속시간을 공급자별 5거래일 동안 최소 3회씩 실행하고 동일한 재연결·재구독·백필 판정을 적용한다.
+- run 무효 조건: clock error budget 초과, 권리·semantics 변경, rate-limit 위반 또는 공통 harness의 ticker·window 요청 누락. 정상 요청에서 발생한 공급자 timeout·오류·봉 부재는 run 무효가 아니라 해당 후보의 실패 관측이다.
+
+각 provider/day run은 점수 대상 봉의 범위와 관측 시간을 섞지 않고 다음 값을 별도로 고정한다.
+
+- `targetCandleSession`: 거래일, venue, time zone, session 시작·종료와 auction·시간외 포함 여부
+- `observationDeadlines`: 각 봉의 `bucket_end + 10분`, 그 거래일의 `session_close + 30분`, 다음 공식 거래일(`T+1`) `13:30 Asia/Seoul`; 마지막 시각에 공급자 관측값을 동결
+- `adjudicationDeadline`: 계약된 독립 기준으로 gap·revision·OHLCV를 판정할 별도 마감. T+1 공급자 관측 시각과 같다고 가정하지 않고 첫 scored run 전에 고정
+- `runWindow`: `targetCandleSession`의 모든 bucket과 위 세 관측 시각을 포함하되 target candle set을 넓히지 않는다. exclusive `windowEnd`에 필요한 고정 completion grace는 scorecard에서 결과를 보기 전에 동결한다.
+
+`T+1` 관측은 전 거래일 target candle을 판정하기 위한 deadline이며 target session을 다음 날까지 늘리지 않는다. provider/day run별로 위 값과 실제 checkpoint 완료 여부를 기록한다. 공통 harness가 요청을 발행하지 못했거나 clock·run manifest가 깨진 날만 모든 후보의 공통 점수에서 무효화하고 동일 조건으로 재실행한다. 정상 발행된 요청의 timeout, 공급자 오류와 봉 부재는 해당 후보의 fault 또는 `not_observed_within_window`로 남기며 재실행으로 지우지 않는다.
+
+REST 공급자별 더 촘촘한 관측은 공통 분봉 점수와 물리적으로 구분한 `scoreEligible=false` precision diagnostic으로만 실행한다. KIS `H0STCNT0` 수신은 별도 `REALTIME_POC` scored run이며 이 diagnostic에 포함하지 않는다.
+
+- KIS REST diagnostic: KRX `J`의 `bucket_end + 5초`·`bucket_end + 65초` 대조
+- 토스: venue 의미를 확정한 `1m`, `adjusted=false` 요청을 종목당 1초 cadence로 polling
+
+이 diagnostic의 호출량·지연·누락 결과는 공급자 동작을 해석하는 근거로만 쓰며 공통 순위, 채택 점수 또는 공통 `1 TPS` 결과에 합산하지 않는다. 공급자 한도와 승인된 권리 범위도 별도로 지킨다.
 
 ```text
-KIS H0STCNT0 -> frame parser -> tick 관측 -> 로컬 1분 집계
-KIS REST     -> candle parser -> bucket_end +5초/+65초 대조 관측
-Toss REST    -> fixed request -> page별 관측 -> snapshot 내부 병합/revision 비교
+KIS H0STCNT0 -> frame parser -> REALTIME_POC scored tick 관측 -> 로컬 1분 집계
+KIS REST     -> candle parser -> CANDLE_REFERENCE 공통 관측 + 별도 +5초/+65초 diagnostic
+Toss REST    -> fixed request -> CANDLE_REFERENCE 공통 관측 + 별도 정밀 polling diagnostic
 ```
 
 관측 저장에는 raw payload, credential, Authorization header, URL query를 넣지 않는다. 대신 권리 범위 안에서 비교에 필요한 typed ticker·price·quantity·OHLCV와 공급자 시각, 로컬 수신 시각, connection epoch, wire ordinal, HTTP 결과, 오류 종류와 안전한 checksum을 저장한다. PR #4의 V4는 `pollRunId`, `pageOrdinal`, request/next cursor를 typed column으로 보존하지만 parser→observation adapter와 V5 provider permit은 아직 없다. PR #4 병합, adapter 통합 검증, V5 registry와 권리 승인까지 끝난 뒤에만 토스 pagination 실측을 시작한다.
