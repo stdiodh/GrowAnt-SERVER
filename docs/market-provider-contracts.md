@@ -146,7 +146,7 @@ adjusted=false
 4. 결과는 명시적으로 최신 시각부터 정렬한다.
 5. `nextBefore`가 이전 cursor보다 과거로 진행하지 않으면 순환으로 거절한다.
 
-이 병합은 한 번의 pagination snapshot 안에서만 사용한다. 각 HTTP poll/page는 먼저 `pollRunId + pageOrdinal`로 append하고, 서로 다른 poll의 동일 timestamp 값 변경은 revision 표본으로 보존한다. 현재 P1 observation schema에는 이 page identity와 request/next cursor 컬럼이 없으므로, P2b 전에 기존 migration을 수정하지 않는 V4 확장과 통합 테스트가 필요하다. 진행 중 봉이 언제 확정되는지는 공식 응답에 없으므로 P2b에서 반복 poll의 최초·마지막 변경 시각을 관측해야 한다. 공식상 허용되는 `count=1`은 단일 page에는 쓸 수 있지만 inclusive cursor가 진행하지 않을 수 있으므로 연속 pagination은 기본 `count=200`을 사용하고 cursor 정체를 실패로 기록한다.
+이 병합은 한 번의 pagination snapshot 안에서만 사용한다. 각 HTTP poll/page는 먼저 `pollRunId + pageOrdinal`로 append하고, 서로 다른 poll의 동일 timestamp 값 변경은 revision 표본으로 보존한다. [PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)의 forward-only V4에는 page identity, request/next cursor와 local terminal 증거가 구현돼 있다. 다만 이 PR의 parser 결과를 V4 observation 모델로 변환·저장하는 adapter는 아직 없으며, PR #4 병합 후 최신 `develop`을 반영하기 전에는 그 스키마를 사용할 수 없다. 진행 중 봉이 언제 확정되는지는 공식 응답에 없으므로 P2b에서 반복 poll의 최초·마지막 변경 시각을 관측해야 한다. 공식상 허용되는 `count=1`은 단일 page에는 쓸 수 있지만 inclusive cursor가 진행하지 않을 수 있으므로 연속 pagination은 기본 `count=200`을 사용하고 cursor 정체를 실패로 기록한다.
 
 ## 5. 현재 자동 검증
 
@@ -181,7 +181,7 @@ adjusted=false
 
 권리만으로 충분하지 않다. 별도 [P1 관측 저장소 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)의 activation 조건에 맞춰 venue, session, timestamp source·정밀도·zone, 수정주가, 정정, 무체결 분, volume 의미, benchmark spec과 clock 상태도 모두 확정해야 한다. 하나라도 `UNKNOWN`이면 live run을 시작하지 않는다.
 
-공식 문서끼리 요청 문법이 충돌하는 항목은 scored P2b와 분리한다. 시험 호출 권리가 승인된 뒤에만 비점수 `P2a-live contract probe`를 한 번 실행하고, raw payload·가격·수량은 저장하지 않은 채 endpoint/TR, 요청 옵션, HTTP status, provider result code와 field presence만 redacted evidence로 남긴다. 이 probe는 요청이 수용되는지만 확인하며 venue·무체결·확정 의미는 공급자의 공식·서면 근거로 확정해야 한다. 그 결과와 문서 checksum으로 semantics와 benchmark spec을 동결한 다음 P1 run을 활성화한다.
+공식 문서끼리 요청 문법이 충돌하는 항목은 scored P2b와 분리한다. 시험 호출 권리가 승인된 뒤에만 비점수 `P2a-live contract probe`를 한 번 실행하고, raw payload·가격·수량은 저장하지 않은 채 endpoint/TR, 요청 옵션, HTTP status, provider result code와 field presence만 redacted evidence로 남긴다. 이 probe는 요청이 수용되는지만 확인하며 venue·무체결·확정 의미는 공급자의 공식·서면 근거로 확정해야 한다. 그 결과와 문서 checksum으로 semantics와 benchmark spec을 동결한다. 실제 `PROVIDER` run은 PR #4의 임시 봉인을 해제하는 V5 rights registry와 provider permit이 canonical bundle의 scope·유효기간·상위 계약을 원자 검증한 뒤에만 활성화한다.
 
 ### P2b: 동일 5종목 관측
 
@@ -203,7 +203,7 @@ KIS REST     -> candle parser -> bucket_end +5초/+65초 대조 관측
 Toss REST    -> fixed request -> page별 관측 -> snapshot 내부 병합/revision 비교
 ```
 
-관측 저장에는 raw payload, credential, Authorization header, URL query를 넣지 않는다. 대신 권리 범위 안에서 비교에 필요한 typed ticker·price·quantity·OHLCV와 공급자 시각, 로컬 수신 시각, connection epoch, wire ordinal, HTTP 결과, 오류 종류와 안전한 checksum을 저장한다. `pollRunId`, `pageOrdinal`, request/next cursor는 현재 P1에 없으므로 V4에서 typed column으로 추가한 뒤에만 토스 pagination 실측을 시작한다.
+관측 저장에는 raw payload, credential, Authorization header, URL query를 넣지 않는다. 대신 권리 범위 안에서 비교에 필요한 typed ticker·price·quantity·OHLCV와 공급자 시각, 로컬 수신 시각, connection epoch, wire ordinal, HTTP 결과, 오류 종류와 안전한 checksum을 저장한다. PR #4의 V4는 `pollRunId`, `pageOrdinal`, request/next cursor를 typed column으로 보존하지만 parser→observation adapter와 V5 provider permit은 아직 없다. PR #4 병합, adapter 통합 검증, V5 registry와 권리 승인까지 끝난 뒤에만 토스 pagination 실측을 시작한다.
 
 P2a는 공급자 decimal 문자열을 `BigDecimal`로 보존하지만 P1 관측 스키마는 가격 `INTEGER`, 수량·volume `BIGINT`다. P2b adapter는 정수성과 범위를 `intValueExact`/`longValueExact`에 해당하는 방식으로 확인한다. 소수·범위초과 값은 반올림하거나 버리지 않고 fault로 기록하며, 실제로 소수가 허용돼야 한다면 기존 migration을 수정하지 않고 새 `NUMERIC` 관측 migration을 먼저 설계한다.
 
