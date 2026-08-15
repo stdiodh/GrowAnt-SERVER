@@ -337,6 +337,7 @@ class MarketObservationStore(
             CleanupCandidate(
                 state = ObservationRunState.valueOf(resultSet.getString("state")),
                 retentionUntil = resultSet.instant("retention_until")!!,
+                databaseNow = resultSet.instant("database_now")!!,
             )
         }.singleOrNull()
 
@@ -347,14 +348,15 @@ class MarketObservationStore(
                 result = ObservationCleanupResult.SKIPPED_NOT_FOUND,
                 requestedAt = requestedAt,
             )
-            candidate.retentionUntil > requestedAt -> emptyCleanupAudit(
-                cleanupId = cleanupId,
-                scope = scope,
-                result = ObservationCleanupResult.SKIPPED_NOT_EXPIRED,
-                requestedAt = requestedAt,
-                terminalState = candidate.state.takeIf(TERMINAL_STATES::contains),
-                retentionUntil = candidate.retentionUntil,
-            )
+            candidate.retentionUntil > requestedAt || candidate.retentionUntil > candidate.databaseNow ->
+                emptyCleanupAudit(
+                    cleanupId = cleanupId,
+                    scope = scope,
+                    result = ObservationCleanupResult.SKIPPED_NOT_EXPIRED,
+                    requestedAt = requestedAt,
+                    terminalState = candidate.state.takeIf(TERMINAL_STATES::contains),
+                    retentionUntil = candidate.retentionUntil,
+                )
             else -> {
                 val terminalCandidate = if (candidate.state in TERMINAL_STATES) {
                     candidate
@@ -780,6 +782,7 @@ class MarketObservationStore(
     private data class CleanupCandidate(
         val state: ObservationRunState,
         val retentionUntil: Instant,
+        val databaseNow: Instant,
     )
 
     private data class ExpectedTickerIdentity(
@@ -1293,12 +1296,13 @@ class MarketObservationStore(
             SELECT run_id, provider
             FROM market_observation_runs
             WHERE retention_until <= :expiredAt
+              AND retention_until <= CURRENT_TIMESTAMP
             ORDER BY retention_until, run_id, provider
             LIMIT :limit
         """
 
         const val LOCK_RUN_FOR_CLEANUP_SQL = """
-            SELECT state, retention_until
+            SELECT state, retention_until, CURRENT_TIMESTAMP AS database_now
             FROM market_observation_runs
             WHERE run_id = :runId AND provider = :provider
             FOR UPDATE
@@ -1310,6 +1314,8 @@ class MarketObservationStore(
             WHERE run_id = :runId
               AND provider = :provider
               AND state IN ('PLANNED', 'RUNNING')
+              AND retention_until <= :requestedAt
+              AND retention_until <= CURRENT_TIMESTAMP
               AND :requestedAt >= COALESCE(started_at, created_at)
         """
 

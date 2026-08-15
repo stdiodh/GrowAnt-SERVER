@@ -27,6 +27,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Instant
+import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
 
@@ -563,17 +564,26 @@ class MarketObservationStoreIT(
     fun `cleanup deletes completed evidence and preserves complete deletion counts`() {
         val scope = scope("51000000-0000-0000-0000-000000000012", "kis")
         val cleanupId = UUID.fromString("53000000-0000-0000-0000-000000000001")
-        createFullRunningRun(scope, retentionUntil = EXPIRED_RETENTION)
+        val databaseNow = currentDatabaseTime()
+        val observationBase = databaseNow.minusSeconds(300)
+        val retentionUntil = databaseNow.minusSeconds(1)
+        val cleanupAt = databaseNow.plusSeconds(1)
+        createFullRunningRun(
+            scope = scope,
+            retentionUntil = databaseNow.plusSeconds(3_600),
+            baseTime = observationBase,
+        )
         assertThat(
             store.compareAndSetRunState(
                 scope,
                 ObservationRunState.RUNNING,
                 ObservationRunState.COMPLETED,
-                ObservationTestFixtures.baseTime.plusSeconds(120),
+                observationBase.plusSeconds(120),
             ),
         ).isTrue()
+        updateRetention(scope, retentionUntil)
 
-        val audit = store.cleanupTerminalRun(scope, cleanupId, CLEANUP_AT)
+        val audit = store.cleanupTerminalRun(scope, cleanupId, cleanupAt)
 
         assertThat(audit.result).isEqualTo(ObservationCleanupResult.DELETED)
         assertThat(audit.terminalState).isEqualTo(ObservationRunState.COMPLETED)
@@ -591,13 +601,20 @@ class MarketObservationStoreIT(
     @Test
     fun `cleanup atomically invalidates and deletes an expired running run`() {
         val scope = scope("51000000-0000-0000-0000-000000000013", "kis")
-        val cleanupId = UUID.fromString("53000000-0000-0000-0000-000000000002")
-        createFullRunningRun(scope, retentionUntil = EXPIRED_RETENTION)
+        val databaseNow = currentDatabaseTime()
+        val observationBase = databaseNow.minusSeconds(300)
+        val retentionUntil = databaseNow.minusSeconds(1)
+        val cleanupAt = databaseNow.plusSeconds(1)
+        createFullRunningRun(
+            scope = scope,
+            retentionUntil = databaseNow.plusSeconds(3_600),
+            baseTime = observationBase,
+        )
+        updateRetention(scope, retentionUntil)
 
         val cleanupService = ObservationCleanupService(
             repository = store,
-            clock = Clock.fixed(CLEANUP_AT, ZoneOffset.UTC),
-            cleanupIdFactory = { cleanupId },
+            clock = Clock.fixed(cleanupAt, ZoneOffset.UTC),
         )
         val audit = cleanupService.cleanupExpired(limit = 100).single { it.scope == scope }
 
@@ -606,6 +623,31 @@ class MarketObservationStoreIT(
         assertThat(audit.expectedTickersDeleted).isEqualTo(1)
         assertThat(audit.ticksDeleted).isEqualTo(1)
         assertThat(store.findRun(scope)).isNull()
+        assertThat(countCleanupAudits(audit.cleanupId)).isEqualTo(1)
+    }
+
+    @Test
+    fun `cleanup refuses an application clock jump before database retention expiry`() {
+        val scope = scope("51000000-0000-0000-0000-000000000021", "kis")
+        val cleanupId = UUID.fromString("53000000-0000-0000-0000-000000000003")
+        createFullRunningRun(scope)
+        val applicationClockJump = FAR_FUTURE.plusSeconds(1)
+
+        assertThat(store.findExpiredScopes(applicationClockJump, limit = 100))
+            .doesNotContain(scope)
+
+        val audit = store.cleanupTerminalRun(scope, cleanupId, applicationClockJump)
+
+        assertThat(audit.result).isEqualTo(ObservationCleanupResult.SKIPPED_NOT_EXPIRED)
+        assertThat(audit.terminalState).isNull()
+        assertThat(audit.expectedTickersDeleted).isZero()
+        assertThat(audit.clockSamplesDeleted).isZero()
+        assertThat(audit.restPollsDeleted).isZero()
+        assertThat(audit.ticksDeleted).isZero()
+        assertThat(audit.candlesDeleted).isZero()
+        assertThat(audit.faultEventsDeleted).isZero()
+        assertThat(store.findRun(scope)).isNotNull()
+        assertThat(store.evidenceSnapshot(scope)!!.tickCount).isEqualTo(1)
         assertThat(countCleanupAudits(cleanupId)).isEqualTo(1)
     }
 
@@ -644,20 +686,54 @@ class MarketObservationStoreIT(
     private fun createFullRunningRun(
         scope: ObservationScope,
         retentionUntil: Instant = FAR_FUTURE,
+        baseTime: Instant = ObservationTestFixtures.baseTime,
     ) {
-        createRunningRun(scope, retentionUntil = retentionUntil)
-        assertThat(store.appendRestPoll(ObservationTestFixtures.restPoll(scope)))
+        createRunningRun(scope, retentionUntil = retentionUntil, baseTime = baseTime)
+        assertThat(
+            store.appendRestPoll(
+                ObservationTestFixtures.restPoll(scope).copy(
+                    requestStartedAt = baseTime.plusSeconds(1),
+                    observedAt = baseTime.plusSeconds(2),
+                    normalizedAt = baseTime.plusSeconds(2),
+                    requestedFrom = baseTime.plusSeconds(1),
+                    requestedTo = baseTime.plusSeconds(120),
+                ),
+            ),
+        )
             .isEqualTo(ObservationAppendResult.APPENDED)
-        assertThat(store.appendTick(ObservationTestFixtures.tick(scope)))
+        assertThat(
+            store.appendTick(
+                ObservationTestFixtures.tick(scope).copy(
+                    providerOccurredAt = baseTime.plusSeconds(10),
+                    socketReceivedAt = baseTime.plusSeconds(11),
+                    normalizedAt = baseTime.plusSeconds(11),
+                ),
+            ),
+        )
             .isEqualTo(ObservationAppendResult.APPENDED)
-        assertThat(store.appendCandle(ObservationTestFixtures.candle(scope)))
+        assertThat(
+            store.appendCandle(
+                ObservationTestFixtures.candle(scope).copy(
+                    bucketStart = baseTime.plusSeconds(30),
+                    observedAt = baseTime.plusSeconds(59),
+                ),
+            ),
+        )
             .isEqualTo(ObservationAppendResult.APPENDED)
-        assertThat(store.appendFaultEvent(ObservationTestFixtures.faultEvent(scope)))
+        assertThat(
+            store.appendFaultEvent(
+                ObservationTestFixtures.faultEvent(scope).copy(
+                    observedAt = baseTime.plusSeconds(30),
+                    gapFrom = baseTime.plusSeconds(30),
+                    gapTo = baseTime.plusSeconds(60),
+                ),
+            ),
+        )
             .isEqualTo(ObservationAppendResult.APPENDED)
         assertThat(
             store.appendClockSample(
                 ObservationTestFixtures.clockSample(scope, sampleSequence = 2).copy(
-                    sampledAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                    sampledAt = baseTime.plusSeconds(119),
                 ),
             ),
         ).isEqualTo(ObservationAppendResult.APPENDED)
@@ -666,13 +742,32 @@ class MarketObservationStoreIT(
     private fun createRunningRun(
         scope: ObservationScope,
         retentionUntil: Instant = FAR_FUTURE,
+        baseTime: Instant = ObservationTestFixtures.baseTime,
     ) {
-        store.createRun(ObservationTestFixtures.run(scope = scope, retentionUntil = retentionUntil))
+        store.createRun(
+            ObservationTestFixtures.run(
+                scope = scope,
+                retentionUntil = retentionUntil,
+                createdAt = baseTime,
+                windowStart = baseTime.plusSeconds(1),
+                windowEnd = baseTime.plusSeconds(120),
+            ),
+        )
         store.createExpectedTickers(ObservationTestFixtures.expectedTickers(scope))
-        store.createSemantics(ObservationTestFixtures.semantics(scope))
-        assertThat(store.appendClockSample(ObservationTestFixtures.clockSample(scope)))
+        store.createSemantics(ObservationTestFixtures.semantics(scope).copy(confirmedAt = baseTime))
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(scope).copy(sampledAt = baseTime),
+            ),
+        )
             .isEqualTo(ObservationAppendResult.APPENDED)
-        assertThat(store.activateRun(scope, expectedClockSampleSequence = 1, ACTIVATED_AT)).isTrue()
+        assertThat(
+            store.activateRun(
+                scope,
+                expectedClockSampleSequence = 1,
+                changedAt = baseTime.plusSeconds(1),
+            ),
+        ).isTrue()
     }
 
     private fun updateRight(
@@ -686,6 +781,25 @@ class MarketObservationStoreIT(
                 "UPDATE market_observation_runs SET $column = :decision WHERE run_id = :runId AND provider = :provider",
                 MapSqlParameterSource()
                     .addValue("decision", decision.name)
+                    .addValue("runId", scope.runId)
+                    .addValue("provider", scope.provider),
+            ),
+        ).isEqualTo(1)
+    }
+
+    private fun updateRetention(
+        scope: ObservationScope,
+        retentionUntil: Instant,
+    ) {
+        assertThat(
+            jdbc.update(
+                """
+                    UPDATE market_observation_runs
+                    SET retention_until = :retentionUntil
+                    WHERE run_id = :runId AND provider = :provider
+                """.trimIndent(),
+                MapSqlParameterSource()
+                    .addValue("retentionUntil", retentionUntil.atOffset(ZoneOffset.UTC))
                     .addValue("runId", scope.runId)
                     .addValue("provider", scope.provider),
             ),
@@ -714,6 +828,12 @@ class MarketObservationStoreIT(
         Long::class.javaObjectType,
     )!!
 
+    private fun currentDatabaseTime(): Instant = jdbc.queryForObject(
+        "SELECT CURRENT_TIMESTAMP",
+        MapSqlParameterSource(),
+        OffsetDateTime::class.java,
+    )!!.toInstant()
+
     private fun scope(runId: String, provider: String) = ObservationTestFixtures.scope(
         runId = UUID.fromString(runId),
         provider = provider,
@@ -721,8 +841,6 @@ class MarketObservationStoreIT(
 
     private companion object {
         val ACTIVATED_AT: Instant = ObservationTestFixtures.baseTime.plusSeconds(1)
-        val EXPIRED_RETENTION: Instant = ObservationTestFixtures.baseTime.plusSeconds(300)
-        val CLEANUP_AT: Instant = ObservationTestFixtures.baseTime.plusSeconds(600)
         val FAR_FUTURE: Instant = Instant.parse("2099-01-01T00:00:00Z")
 
         val OBSERVATION_TABLES = setOf(

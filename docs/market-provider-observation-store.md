@@ -118,6 +118,8 @@ REST 요청 UUID와 tick의 `(connection_epoch, local_receive_sequence)`는 로�
 
 완료 경로는 run을 먼저 `FOR UPDATE`로 잠근 뒤 별도 READ COMMITTED statement에서 REST poll과 봉 수를 다시 읽는다. 완료가 이미 시작된 append를 기다렸다면 그 commit을 새 snapshot에서 확인하므로, 반환 봉이 덜 저장된 실행을 terminal 상태로 닫지 않는다.
 
+cleanup 후보 조회와 잠금 후 삭제 판정은 애플리케이션 `requestedAt`과 PostgreSQL `CURRENT_TIMESTAMP`가 모두 `retention_until`에 도달해야 통과한다. 애플리케이션 시계만 앞으로 이동해도 아직 DB 시각상 유효한 증거를 조기 삭제하지 않으며, 두 시계가 어긋나면 삭제를 늦추는 방향으로 실패한다.
+
 이번 슬라이스는 `cleanupExpired` 호출 경계만 제공하며 자동 실행기는 포함하지 않는다. bounded scheduler 또는 운영 job, 실패 알림과 지표를 연결하기 전에는 `retention_until` 이후 원본이 자동 삭제된다고 보장할 수 없다. 실제 공급자 데이터를 넣기 전 이 운영 경로를 별도 차단 조건으로 확인한다.
 
 ## 6. 검증 순서
