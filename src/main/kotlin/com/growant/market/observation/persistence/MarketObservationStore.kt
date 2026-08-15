@@ -962,6 +962,7 @@ class MarketObservationStore(
             WHERE run_id = :runId
               AND provider = :provider
               AND state = 'PLANNED'
+              AND origin = 'SYNTHETIC'
               AND :changedAt <= window_start
               AND window_end > :changedAt
               AND retention_until > :changedAt
@@ -976,6 +977,7 @@ class MarketObservationStore(
             WHERE run_id = :runId
               AND provider = :provider
               AND state = 'PLANNED'
+              AND r.origin = 'SYNTHETIC'
               AND latest_clock_sample_sequence = :expectedClockSampleSequence
               AND :expectedClockSampleSequence = $AS_OF_CLOCK_SAMPLE_SEQUENCE_SQL
               AND :changedAt <= window_start
@@ -990,6 +992,7 @@ class MarketObservationStore(
             WHERE run_id = :runId
               AND provider = :provider
               AND state = 'RUNNING'
+              AND origin = 'SYNTHETIC'
             FOR UPDATE
         """
 
@@ -1001,6 +1004,7 @@ class MarketObservationStore(
               AND r.state = :expected
               AND :expected = 'RUNNING'
               AND :updated = 'COMPLETED'
+              AND r.origin = 'SYNTHETIC'
               AND r.retention_until > :changedAt
               AND :changedAt >= r.window_end
             FOR UPDATE OF r
@@ -1122,6 +1126,7 @@ class MarketObservationStore(
             WHERE r.run_id = :runId
               AND r.provider = :provider
               AND r.state = 'RUNNING'
+              AND r.origin = 'SYNTHETIC'
               AND r.storage_right = 'ALLOWED'
               AND r.benchmark_right = 'ALLOWED'
               AND r.retention_until > CURRENT_TIMESTAMP

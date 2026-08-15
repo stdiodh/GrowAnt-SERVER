@@ -197,11 +197,21 @@ class ObservationActivationPolicyTest {
 
         assertThat(policy.assess(run, semantics(run), sample, tickers(run)).failures)
             .containsExactlyInAnyOrder(
+                ObservationActivationFailure.RIGHTS_REGISTRY_UNVERIFIED,
                 ObservationActivationFailure.CLOCK_SAMPLE_NOT_LATEST,
                 ObservationActivationFailure.CLOCK_NOT_SYNCHRONIZED,
                 ObservationActivationFailure.TRUSTED_CLOCK_SOURCE_REQUIRED,
                 ObservationActivationFailure.CLOCK_GATE_FAILED,
             )
+    }
+
+    @Test
+    fun `rejects provider activation until an approved rights registry is implemented`() {
+        val run = activatableRun().copy(origin = ObservationOrigin.PROVIDER)
+        val trustedClock = clockSample(run).copy(source = ObservationClockSource.NTP)
+
+        assertThat(policy.assess(run, semantics(run), trustedClock, tickers(run)).failures)
+            .containsExactly(ObservationActivationFailure.RIGHTS_REGISTRY_UNVERIFIED)
     }
 
     @Test

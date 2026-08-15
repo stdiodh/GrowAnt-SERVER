@@ -61,7 +61,7 @@ V4 pagination 증거 보강: 2026-08-16
 ## 4. 상태와 활성화 게이트
 
 ```text
-PLANNED --(권리·의미·종목·clock 통과)--> RUNNING
+PLANNED --(권리 registry·의미·종목·clock 통과)--> RUNNING
 PLANNED -------------------------------> INVALID
 RUNNING --(예정 구간 완주)-------------> COMPLETED
 RUNNING --(clock 불건강·실패)----------> INVALID
@@ -75,6 +75,7 @@ RUNNING --(clock 불건강·실패)----------> INVALID
 4. 기대 종목의 개수, 0부터 연속인 순서, checksum이 실행 명세와 같다.
 5. 최신 clock 표본이 동기화 상태이며 `abs(offset) + uncertainty <= 100ms`이고 freshness 범위 안이다.
 6. 권리·의미·종목·clock 입력을 모두 읽은 뒤의 최종 decision time이 예정 관측 시작 시각을 넘지 않는다.
+7. 실제 공급자 실행은 V5 registry가 bundle ID/hash, 여섯 결정, 실행 scope·유효기간과 상위 계약을 원자적으로 검증한다. 현재 V4 foundation에는 registry가 없으므로 `origin=PROVIDER`는 항상 거절된다.
 
 실행 행을 먼저 잠그고 권리·의미·종목·clock 입력을 읽은 뒤 decision time을 마지막에 읽으며, 마지막 clock sequence 확인과 `RUNNING` 전환을 같은 트랜잭션에서 수행한다. 따라서 입력 조회 중 잠금 대기나 GC로 window 시작을 넘기면 이전 시각으로 활성화할 수 없다. 검증 직후 더 최신의 불건강 표본이 들어오려 해도 같은 행 잠금 뒤에 직렬화되며, sequence 불일치면 활성화가 실패한다. 실행 중 새 clock 표본이 기준을 벗어나면 해당 표본은 증거로 남기고 실행을 `INVALID`로 전환한다. 로컬 시각이 뒤로 이동한 표본도 append-only 증거로 남기되 latest pointer는 이동시키지 않고 같은 트랜잭션에서 실행을 무효화한다.
 
@@ -119,7 +120,9 @@ REST 요청 UUID와 tick의 `(connection_epoch, local_receive_sequence)`는 로�
 
 이 manifest는 접근 제한된 내부 증거다. row checksum도 1분 시계열에서 계산한 값이므로 공급자의 benchmark 공개 허용을 받기 전에는 PR·Velog·공개 artifact에 올리지 않는다. 외부 공개가 허용되면 가격을 복원할 수 없는 일별 집계만 담은 별도 redacted scorecard를 만들고, 내부 manifest나 cursor·row checksum을 공개 근거로 대신 사용하지 않는다.
 
-현재 run 행의 `rights_evidence_id`와 `rights_evidence_sha256`은 여섯 권리 및 KRX·NXT 같은 상위 권리 근거를 묶은 비공개 canonical bundle을 가리키는 포인터다. foundation은 이 checksum과 enum을 저장하지만 bundle 내부의 항목별 scope·유효기간·답변 권한을 DB에서 다시 검증하지는 않는다. 실제 공급자 adapter를 활성화하기 전에는 승인 registry가 bundle을 검증해 같은 여섯 결정과 scope를 만든다는 경로를 추가해야 하며, 그 전까지 실제 관측은 `RIGHTS_BLOCKED`다.
+현재 run 행의 `rights_evidence_id`와 `rights_evidence_sha256`은 여섯 권리 및 KRX·NXT 같은 상위 권리 근거를 묶은 비공개 canonical bundle을 가리키는 포인터다. foundation은 이 checksum과 enum을 저장하지만 bundle 내부의 항목별 scope·유효기간·답변 권한을 DB에서 다시 검증하지는 않는다. 그래서 활성화 정책은 `origin=PROVIDER`의 활성화를 거절하고, JDBC 저장소는 provider 활성화와 REST poll·tick·candle·fault 실시세 관측 append 및 `COMPLETED` 전환을 거절한다. 활성화 전 clock 표본과 의미·종목 명세 기록, `INVALID` 전환과 cleanup은 계속 허용한다. 실제 공급자 adapter를 활성화하기 전에는 별도 V5 registry가 bundle을 검증해 같은 여섯 결정과 scope를 만든 뒤 이 임시 봉인을 대체해야 하며, 그 전까지 실제 관측은 `RIGHTS_BLOCKED`다. network adapter가 실제 호출을 `SYNTHETIC`으로 표시해 이 경계를 우회해서는 안 된다.
+
+이 임시 봉인은 `market_observation_*` 경로의 안전선이지 기존 canonical `minute_candles` 전체에 대한 권리 lease가 아니다. 현재 저장소에는 실제 KIS·토스 network adapter가 없고 유일한 tick 공급자는 `sim`이며 수집도 기본값이 꺼져 있어 즉시 실시세 ingress는 없다. 후속 adapter PR은 최초 연결·poll·재연결·backfill 전에 verified provider permit을 요구하고, collector·reconcile의 canonical write도 같은 lease에 묶어야 한다.
 
 모든 observation append와 `COMPLETED` 전환은 해당 관측 시각 이하에서 가장 최근인 clock 표본이 freshness·동기화·오차 기준을 만족해야 한다. DB 저장 전에 다음 clock 표본이 들어와도 관측 당시 표본으로 판정하며, 정상 tick은 그 as-of sequence를 직접 참조해야 한다. sampler가 멈춰 유효 표본이 오래되면 append와 완료를 거절한다. `PROVIDER_REST` 봉은 성공하고 정규화된 동일 요청의 `[requested_from, requested_to)` 안에 있어야 하고, 봉 관측 시각이 부모 REST 응답 관측보다 빠를 수 없다. 공급자 payload 전체의 `returned_candle_count`와 run window에 포함해 저장할 `eligible_candle_count`를 분리하고, 완료 전에는 후자와 실제 저장 봉 수가 일치해야 한다. 따라서 페이지가 window 밖 봉을 함께 반환해도 원본 개수는 보존하면서 완료가 영구 차단되지 않는다.
 

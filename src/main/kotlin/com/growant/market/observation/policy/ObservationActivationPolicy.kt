@@ -53,6 +53,9 @@ class ObservationActivationPolicy(
         if (run.sourceTreeDirty) {
             failures += ObservationActivationFailure.SOURCE_TREE_DIRTY
         }
+        if (run.origin == ObservationOrigin.PROVIDER) {
+            failures += ObservationActivationFailure.RIGHTS_REGISTRY_UNVERIFIED
+        }
 
         val rights = run.rights
         val rightsDecisions = listOf(
@@ -242,6 +245,7 @@ enum class ObservationActivationFailure {
     OBSERVATION_WINDOW_EXPIRED,
     OBSERVATION_WINDOW_ALREADY_STARTED,
     SOURCE_TREE_DIRTY,
+    RIGHTS_REGISTRY_UNVERIFIED,
     RIGHTS_UNKNOWN,
     STORAGE_NOT_ALLOWED,
     BENCHMARK_NOT_ALLOWED,

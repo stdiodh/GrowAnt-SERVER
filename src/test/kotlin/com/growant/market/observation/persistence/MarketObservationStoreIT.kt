@@ -4,6 +4,8 @@ import com.growant.market.candle.MinuteCandle
 import com.growant.market.candle.persistence.MinuteCandleStore
 import com.growant.market.observation.CandleObservationSource
 import com.growant.market.observation.ObservationCleanupResult
+import com.growant.market.observation.ObservationClockSource
+import com.growant.market.observation.ObservationOrigin
 import com.growant.market.observation.RestPollOutcome
 import com.growant.market.observation.ObservationRunState
 import com.growant.market.observation.ObservationScope
@@ -141,6 +143,87 @@ class MarketObservationStoreIT(
             ),
         ).isFalse()
         assertThat(store.findRun(scope)!!.state).isEqualTo(ObservationRunState.PLANNED)
+    }
+
+    @Test
+    fun `provider runs cannot activate or append before the rights registry exists`() {
+        val plannedScope = scope("51000000-0000-0000-0000-000000000024", "kis")
+        store.createRun(
+            ObservationTestFixtures.run(scope = plannedScope).copy(origin = ObservationOrigin.PROVIDER),
+        )
+        store.createExpectedTickers(ObservationTestFixtures.expectedTickers(plannedScope))
+        store.createSemantics(ObservationTestFixtures.semantics(plannedScope))
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(plannedScope).copy(source = ObservationClockSource.NTP),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+
+        assertThat(store.activateRun(plannedScope, 1, ACTIVATED_AT)).isFalse()
+        assertThat(store.findRun(plannedScope)!!.state).isEqualTo(ObservationRunState.PLANNED)
+
+        val forcedScope = scope("51000000-0000-0000-0000-000000000025", "kis")
+        createRunningRun(forcedScope)
+        assertThat(
+            jdbc.update(
+                """
+                    UPDATE market_observation_runs
+                    SET origin = 'PROVIDER'
+                    WHERE run_id = :runId AND provider = :provider
+                """.trimIndent(),
+                MapSqlParameterSource()
+                    .addValue("runId", forcedScope.runId)
+                    .addValue("provider", forcedScope.provider),
+            ),
+        ).isEqualTo(1)
+
+        assertThat(store.appendTick(ObservationTestFixtures.tick(forcedScope)))
+            .isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(store.appendRestPoll(ObservationTestFixtures.restPoll(forcedScope)))
+            .isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(
+            store.appendCandle(
+                ObservationTestFixtures.candle(forcedScope).copy(
+                    source = CandleObservationSource.LOCAL_AGGREGATE,
+                    restRequestId = null,
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(store.appendFaultEvent(ObservationTestFixtures.faultEvent(forcedScope)))
+            .isEqualTo(ObservationAppendResult.REJECTED)
+        assertThat(countRows("market_observation_ticks", forcedScope)).isZero()
+        assertThat(countRows("market_observation_rest_polls", forcedScope)).isZero()
+        assertThat(countRows("market_observation_candles", forcedScope)).isZero()
+        assertThat(countRows("market_observation_fault_events", forcedScope)).isZero()
+
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(forcedScope, sampleSequence = 2).copy(
+                    sampledAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                    source = ObservationClockSource.NTP,
+                ),
+            ),
+        ).isEqualTo(ObservationAppendResult.APPENDED)
+
+        assertThat(store.lockRunForCompletion(forcedScope)).isNull()
+        assertThat(
+            store.compareAndSetRunState(
+                forcedScope,
+                ObservationRunState.RUNNING,
+                ObservationRunState.COMPLETED,
+                ObservationTestFixtures.baseTime.plusSeconds(120),
+            ),
+        ).isFalse()
+        assertThat(store.findRun(forcedScope)!!.state).isEqualTo(ObservationRunState.RUNNING)
+        assertThat(
+            store.compareAndSetRunState(
+                forcedScope,
+                ObservationRunState.RUNNING,
+                ObservationRunState.INVALID,
+                ObservationTestFixtures.baseTime.plusSeconds(120),
+            ),
+        ).isTrue()
+        assertThat(store.findRun(forcedScope)!!.state).isEqualTo(ObservationRunState.INVALID)
     }
 
     @Test
@@ -1113,6 +1196,7 @@ class MarketObservationStoreIT(
             "market_observation_ticks",
             "market_observation_rest_polls",
             "market_observation_candles",
+            "market_observation_fault_events",
         )
     }
 }

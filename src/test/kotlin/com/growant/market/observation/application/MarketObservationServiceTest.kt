@@ -2,6 +2,8 @@ package com.growant.market.observation.application
 
 import com.growant.market.observation.ObservationRun
 import com.growant.market.observation.ObservationRunState
+import com.growant.market.observation.ObservationClockSource
+import com.growant.market.observation.ObservationOrigin
 import com.growant.market.observation.ObservationTestFixtures
 import com.growant.market.observation.RightsDecision
 import com.growant.market.observation.policy.ClockHealthPolicy
@@ -49,6 +51,21 @@ class MarketObservationServiceTest {
 
         assertThat(exception.failures)
             .containsExactly(ObservationActivationFailure.STORAGE_NOT_ALLOWED)
+        verify(repository, never()).activateRun(run.scope, 1, ObservationTestFixtures.baseTime)
+    }
+
+    @Test
+    fun `activation refuses provider data until the rights registry is verified`() {
+        val run = activatableRun().copy(origin = ObservationOrigin.PROVIDER)
+        prepareActivation(run)
+        given(repository.latestClockSample(run.scope)).willReturn(
+            ObservationTestFixtures.clockSample(run.scope).copy(source = ObservationClockSource.NTP),
+        )
+
+        val exception = assertThrows<ObservationActivationRejectedException> { service.activate(run.scope) }
+
+        assertThat(exception.failures)
+            .containsExactly(ObservationActivationFailure.RIGHTS_REGISTRY_UNVERIFIED)
         verify(repository, never()).activateRun(run.scope, 1, ObservationTestFixtures.baseTime)
     }
 

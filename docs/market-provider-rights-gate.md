@@ -295,7 +295,7 @@ decisionReason
 
 key 정렬, UTF-8, LF, 정수·boolean의 고정 표현을 사용하는 canonical serialization의 SHA-256만 run에 넣는다. 동일 bundle은 항상 같은 bytes와 hash를 만들어야 하고, 여섯 enum은 bundle의 결정과 정확히 같아야 한다.
 
-현재 관측 foundation은 bundle ID·checksum과 enum을 저장하지만 bundle 내부를 조회해 항목별 scope·유효기간을 검증하는 registry는 아직 없다. 따라서 실제 공급자 adapter를 붙이기 전에 승인된 비공개 bundle을 읽고 hash·여섯 결정·상위 계약·유효기간을 검증하는 Gate 0 registry를 구현해야 한다. 단순히 임의의 64자리 hash와 `ALLOWED` enum을 넣어 run을 활성화해서는 안 된다.
+현재 관측 foundation은 bundle ID·checksum과 enum을 저장하지만 bundle 내부를 조회해 항목별 scope·유효기간을 검증하는 registry는 아직 없다. 현재 활성화 정책은 `origin=PROVIDER`를 거절하고, JDBC 저장소는 provider 활성화와 REST poll·tick·candle·fault append 및 완료 전환을 거절한다. 활성화 전 clock 증거와 `INVALID`·cleanup은 허용한다. 이 봉인은 관측 저장소 범위이며 현재 실제 network adapter가 없다는 별도 경계와 함께만 유효하다. 따라서 실제 공급자 adapter를 붙이기 전에 별도 V5에서 승인된 비공개 bundle을 읽고 hash·여섯 결정·상위 계약·유효기간을 원자적으로 검증하는 Gate 0 registry를 구현하고, provider 연결과 canonical `minute_candles` 저장·보정도 verified lease에 묶어야 한다. 단순히 임의의 64자리 hash와 `ALLOWED` enum을 넣어 run을 활성화해서는 안 되며, 실제 network 호출을 `SYNTHETIC`으로 표시해서도 안 된다.
 
 ### 8.3 fail-closed 판정
 
@@ -341,6 +341,7 @@ key 정렬, UTF-8, LF, 정수·boolean의 고정 표현을 사용하는 canonica
 - [ ] 공개 차트 후보로 평가하려면 Q6-A 범위의 새 bundle에서 `externalDistribution=ALLOWED`다.
 - [ ] 공급자별 venue·세션·봉 시각·확정·정정·거래량 의미가 확정됐다.
 - [ ] 공식 문서·회신·계약의 최종 URL, 조회시각, 유효기간과 SHA-256을 보존했다.
+- [ ] V5 registry가 canonical bundle의 ID/hash, 여섯 결정, 실행 scope·유효기간과 상위 계약을 원자적으로 검증하며 provider permit과 canonical write를 fail-closed로 제어한다.
 - [ ] 실제 키와 시세값이 Git·CI·문의 증거에 포함되지 않았다.
 
 하나라도 충족하지 못하면 실데이터 수집을 시작하지 않고 합성 fixture 단계에 머문다.
