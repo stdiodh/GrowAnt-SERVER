@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "scorecardVersion": "1.0.0-draft.1",
+  "id": "growant.market-provider.kospi-feed",
+  "role": "KOSPI_FEED",
+  "state": "DRAFT",
+  "scoringMode": "WEIGHTED_RANKING",
+  "scoredRunsAllowed": false,
+  "providerRankingAllowed": false,
+  "documentedBaselineState": "DOCUMENTED_NOT_EXECUTABLE",
+  "scoringMetricsState": "UNRESOLVED",
+  "areas": [
+    {
+      "id": "coverage-sla",
+      "weightPoints": 30,
+      "metricIds": []
+    },
+    {
+      "id": "accuracy-recovery",
+      "weightPoints": 25,
+      "metricIds": []
+    },
+    {
+      "id": "latency",
+      "weightPoints": 15,
+      "metricIds": []
+    },
+    {
+      "id": "rights-total-cost",
+      "weightPoints": 20,
+      "metricIds": []
+    },
+    {
+      "id": "operational-complexity",
+      "weightPoints": 10,
+      "metricIds": []
+    }
+  ],
+  "documentedHardGates": [
+    {
+      "id": "common.rights-admission",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.independent-reference-accuracy",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.secret-protection",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.timestamp-semantics",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.ntp-absolute-offset-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 100,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "kospi.contract-universe-rights-sla",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "kospi.minimum-trading-day-count",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "GTE",
+      "numericThreshold": 20,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "count",
+      "executable": false
+    },
+    {
+      "id": "kospi.daily-contract-universe-coverage-percent",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "EQ",
+      "numericThreshold": 100,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "percent",
+      "executable": false
+    },
+    {
+      "id": "kospi.final-unrecovered-gap-count",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "EQ",
+      "numericThreshold": 0,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "count",
+      "executable": false
+    },
+    {
+      "id": "kospi.final-stale-count",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "EQ",
+      "numericThreshold": 0,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "count",
+      "executable": false
+    },
+    {
+      "id": "kospi.rpo-zero",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "kospi.outage-recovery-elapsed-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 600000,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "kospi.contract-monthly-availability-percent",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "GTE",
+      "numericThreshold": 99.9,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "percent",
+      "executable": false
+    },
+    {
+      "id": "kospi.monthly-total-cost-krw",
+      "kind": "VARIABLE",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": "MONTHLY_MARKET_DATA_BUDGET_KRW",
+      "unit": "KRW/month",
+      "executable": false
+    }
+  ],
+  "metrics": [],
+  "unresolvedDecisionIds": [
+    "metric-catalog",
+    "metric-good-bad-boundaries",
+    "qualitative-rubrics",
+    "missing-and-late-evidence",
+    "aggregation-order",
+    "percentile-algorithm",
+    "confidence-interval-algorithm",
+    "unsupported-feature-policy",
+    "rights-purpose-selection",
+    "independent-reference-definition",
+    "rpo-definition-and-unit",
+    "monthly-budget-krw",
+    "contract-universe-definition",
+    "latency-metric-definition",
+    "rights-sla-evidence",
+    "annual-tco-boundaries",
+    "fault-adjudication-protocol",
+    "operational-complexity-rubric",
+    "execution-environment"
+  ],
+  "provenance": [
+    {
+      "path": "docs/market-provider-benchmark.md",
+      "commit": "c9a45358c0ca0ce9f02fa8708502f1d26b198ce1",
+      "contentSha256": "279f66b06a44b4cfb031f83bd12f0f471f9bb323b5e42a0ab629f9496bb2b8bd"
+    }
+  ]
+}

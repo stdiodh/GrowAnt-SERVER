@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "scorecardVersion": "1.0.0-draft.1",
+  "state": "DRAFT",
+  "tiePolicy": {
+    "maxDifferencePointsInclusive": 3,
+    "resolution": "NO_FORCED_WINNER"
+  },
+  "entries": [
+    {
+      "role": "REALTIME_POC",
+      "fileName": "benchmark-scorecard-realtime-poc.json",
+      "sha256": "926aa3568d9fd4b8322fd0a4134654cd5903a01a537e809a8a4b9969016e3622"
+    },
+    {
+      "role": "CANDLE_REFERENCE",
+      "fileName": "benchmark-scorecard-candle-reference.json",
+      "sha256": "e2d1787d2bfb77266265bb0f2df397fb19d5fde180487285b0faec44c60c5982"
+    },
+    {
+      "role": "KOSPI_FEED",
+      "fileName": "benchmark-scorecard-kospi-feed.json",
+      "sha256": "66076e2b810d63976268cb5b3cdc8114022c09023b3fe9b8ebe64571e60da51e"
+    },
+    {
+      "role": "GROWANT_LOAD",
+      "fileName": "benchmark-scorecard-growant-load.json",
+      "sha256": "05c25c656c8404cbce2202ea613cfcf5c7ed9b6d1bebabcd84f13b0a81a933e6"
+    }
+  ]
+}
