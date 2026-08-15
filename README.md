@@ -3,6 +3,7 @@
 GrowAnt의 Kotlin/Spring Boot 백엔드 서버입니다.
 
 분봉 기능을 수정하거나 새 시세 공급자를 연결할 때는 [1분봉 개발 가이드](docs/market-minute-candle-development.md)를 먼저 확인합니다.
+KIS·토스 공급자 응답을 다룰 때는 [공급자 계약 파서](docs/market-provider-contracts.md)의 검증 범위와 실측 전 권리 게이트도 함께 확인합니다.
 
 ## 필수 협업 규칙
 
