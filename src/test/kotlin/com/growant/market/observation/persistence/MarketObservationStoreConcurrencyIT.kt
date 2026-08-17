@@ -303,35 +303,41 @@ class MarketObservationStoreConcurrencyIT(
 
     @Test
     fun `completion rejects an expired decision after waiting for an append lock`() {
+        val baseTime = Instant.now()
         val scope = ObservationScope(
             runId = UUID.fromString("54000000-0000-0000-0000-000000000006"),
             provider = "kis",
         )
         val run = ObservationTestFixtures.run(
             scope = scope,
-            retentionUntil = ObservationTestFixtures.baseTime.plusSeconds(121),
+            retentionUntil = baseTime.plusSeconds(121),
+            createdAt = baseTime,
         )
         store.createRun(run)
         store.createExpectedTickers(ObservationTestFixtures.expectedTickers(scope))
-        store.createSemantics(ObservationTestFixtures.semantics(scope))
-        assertThat(store.appendClockSample(ObservationTestFixtures.clockSample(scope)))
+        store.createSemantics(ObservationTestFixtures.semantics(scope).copy(confirmedAt = baseTime))
+        assertThat(
+            store.appendClockSample(
+                ObservationTestFixtures.clockSample(scope).copy(sampledAt = baseTime),
+            ),
+        )
             .isEqualTo(ObservationAppendResult.APPENDED)
         assertThat(
             store.activateRun(
                 scope,
                 expectedClockSampleSequence = 1,
-                changedAt = ObservationTestFixtures.baseTime.plusSeconds(1),
+                changedAt = baseTime.plusSeconds(1),
             ),
         ).isTrue()
         assertThat(
             store.appendClockSample(
                 ObservationTestFixtures.clockSample(scope, sampleSequence = 2).copy(
-                    sampledAt = ObservationTestFixtures.baseTime.plusSeconds(119),
+                    sampledAt = baseTime.plusSeconds(119),
                 ),
             ),
         ).isEqualTo(ObservationAppendResult.APPENDED)
 
-        val currentTime = AtomicReference(ObservationTestFixtures.baseTime.plusSeconds(120))
+        val currentTime = AtomicReference(baseTime.plusSeconds(120))
         val advancingClock = object : Clock() {
             override fun getZone(): ZoneId = ZoneOffset.UTC
 
@@ -356,7 +362,13 @@ class MarketObservationStoreConcurrencyIT(
             val append = executor.submit<ObservationAppendResult> {
                 checkNotNull(
                     TransactionTemplate(transactionManager).execute {
-                        val result = store.appendTick(ObservationTestFixtures.tick(scope))
+                        val result = store.appendTick(
+                            ObservationTestFixtures.tick(scope).copy(
+                                providerOccurredAt = baseTime.plusSeconds(10),
+                                socketReceivedAt = baseTime.plusSeconds(11),
+                                normalizedAt = baseTime.plusSeconds(11),
+                            ),
+                        )
                         assertThat(result).isEqualTo(ObservationAppendResult.APPENDED)
                         appendInserted.countDown()
                         assertThat(releaseAppendCommit.await(5, TimeUnit.SECONDS)).isTrue()
@@ -382,7 +394,7 @@ class MarketObservationStoreConcurrencyIT(
             assertThatThrownBy { completion.get(250, TimeUnit.MILLISECONDS) }
                 .isInstanceOf(TimeoutException::class.java)
 
-            currentTime.set(ObservationTestFixtures.baseTime.plusSeconds(122))
+            currentTime.set(baseTime.plusSeconds(122))
             releaseAppendCommit.countDown()
             assertThat(append.get(5, TimeUnit.SECONDS)).isEqualTo(ObservationAppendResult.APPENDED)
             assertThat(completion.get(5, TimeUnit.SECONDS)).isTrue()
