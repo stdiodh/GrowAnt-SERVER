@@ -10,22 +10,22 @@
     {
       "role": "REALTIME_POC",
       "fileName": "benchmark-scorecard-realtime-poc.json",
-      "sha256": "926aa3568d9fd4b8322fd0a4134654cd5903a01a537e809a8a4b9969016e3622"
+      "sha256": "fdfb6b84a05c7225cfa282c1747200ee75096bace969563736eded6a78b3c286"
     },
     {
       "role": "CANDLE_REFERENCE",
       "fileName": "benchmark-scorecard-candle-reference.json",
-      "sha256": "e2d1787d2bfb77266265bb0f2df397fb19d5fde180487285b0faec44c60c5982"
+      "sha256": "89ef5dc4b8b55e2432f9ec8c1d18e40540721a6d6354742daf50c4ee8ffd8c5f"
     },
     {
       "role": "KOSPI_FEED",
       "fileName": "benchmark-scorecard-kospi-feed.json",
-      "sha256": "66076e2b810d63976268cb5b3cdc8114022c09023b3fe9b8ebe64571e60da51e"
+      "sha256": "f10640d577c28d665df61b9d9f16b4e3383df94564f2be49e71bc84bd46e8c97"
     },
     {
       "role": "GROWANT_LOAD",
       "fileName": "benchmark-scorecard-growant-load.json",
-      "sha256": "05c25c656c8404cbce2202ea613cfcf5c7ed9b6d1bebabcd84f13b0a81a933e6"
+      "sha256": "4174a3a694b6eb3b6073435b4e9a2f7aa305cd15a00df1223063342e921399c7"
     }
   ]
 }

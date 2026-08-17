@@ -172,7 +172,6 @@ data class AggregationStep(
 
 data class ScorecardProvenance(
     val path: String,
-    val commit: String,
     val contentSha256: String,
 )
 

@@ -109,7 +109,6 @@ internal object ScorecardTestFixtures {
             provenance = listOf(
                 ScorecardProvenance(
                     path = "docs/test-only-scorecard.md",
-                    commit = "a".repeat(40),
                     contentSha256 = "b".repeat(64),
                 ),
             ),

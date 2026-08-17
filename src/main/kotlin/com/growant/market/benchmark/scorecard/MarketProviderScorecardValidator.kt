@@ -506,9 +506,6 @@ class MarketProviderScorecardValidator {
             if (!isSafeRelativePath(provenance.path)) {
                 violations += "$provenanceField.path must be a normalized relative POSIX path"
             }
-            if (!COMMIT_PATTERN.matches(provenance.commit)) {
-                violations += "$provenanceField.commit must be a full lowercase Git SHA-1"
-            }
             if (!SHA256_PATTERN.matches(provenance.contentSha256)) {
                 violations += "$provenanceField.contentSha256 must be a lowercase SHA-256"
             }
@@ -555,7 +552,6 @@ class MarketProviderScorecardValidator {
         val IDENTIFIER_PATTERN = Regex("[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*")
         val VARIABLE_PATTERN = Regex("[A-Z][A-Z0-9_]*")
         val SHA256_PATTERN = Regex("[0-9a-f]{64}")
-        val COMMIT_PATTERN = Regex("[0-9a-f]{40}")
         val EXPECTED_AREA_WEIGHTS = mapOf(
             ScorecardRole.REALTIME_POC to linkedMapOf(
                 "accuracy-recovery" to BigDecimal("40"),

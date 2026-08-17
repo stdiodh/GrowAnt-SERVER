@@ -50,7 +50,7 @@
 | 증권사·공공 API 비교 | 공식 문서 조사 | 기능, 한도, 권리와 구현 적합성 |
 | KIS WebSocket + REST | 5종목 기술 1순위·실수집 미구현 | 저장·벤치마크 서면 허가 전에는 실제 호출하지 않음 |
 | 토스 REST 1분봉 | 기술적으로 적합·`RIGHTS_BLOCKED` | 서면 예외 승인 전 실측·저장·화면 사용에서 제외 |
-| 공급자 관측 저장소 P1 | [별도 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)에서 구현·검증, 병합 전 | 공급자별 증거 격리 기반. 실제 공급자 데이터는 아직 없음 |
+| 공급자 관측 저장소 P1 | [관측 저장소](../../market-provider-observation-store.md)에 구현 | 공급자별 증거 격리 기반. 실제 공급자 데이터는 아직 없음 |
 | 로컬 REST B1 부하 재검증 | 4조건을 각 3회 실행 | 5일·100 VU만 p95 기준 3회 모두 실패 |
 | 공개 다중 사용자 운영 공급자 | 개인용 무료 API 중 채택 없음 | 정식 시세 이용 계약이 먼저 필요함 |
 
@@ -498,7 +498,7 @@ VU 100을 실제 사용자 100명과 같다고 볼 수는 없습니다. 실제 �
 
 실제 공급자 호출 전 Gate 0에서 시험 호출 자체가 허용되는지 먼저 서면으로 확인합니다. 이어 `storage`, `benchmark`(허용된 파생 포함), `replay`, `ci`, `internalDisplay`, `externalDistribution` 여섯 권리를 각각 확정합니다. 하나라도 `UNKNOWN`이면 실제 run을 시작하지 않고, 최소한 `storage`와 `benchmark`가 `ALLOWED`인 후보만 5종목 scored 시험에 올립니다. 사용하지 않는 purpose는 `DENIED`여도 됩니다.
 
-공급자별 관측을 기존 `minute_candles`에 섞지 않기 위한 P1 기반은 [별도 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)에서 unit 126개·PostgreSQL 통합 57개, 패키징과 격리 컨테이너 smoke까지 검증했고 아직 병합 전입니다. 실제 NTP 표본·공급자별 timestamp/venue/session/정정·무체결 의미와 권리 증거는 채워지지 않았습니다. P1 병합과 Gate 0 서면 확인은 병행하고, 기다리는 동안 실제 시세를 쓰지 않는 합성 contract test까지 진행할 수 있습니다. 실제 adapter 연결과 5종목 관측만 권리 승인 뒤 실행합니다.
+공급자별 관측을 기존 `minute_candles`에 섞지 않기 위한 P1 기반은 [관측 저장소](../../market-provider-observation-store.md)에 구현돼 있습니다. 실제 NTP 표본·공급자별 timestamp/venue/session/정정·무체결 의미와 권리 증거는 채워지지 않았습니다. Gate 0 서면 확인을 진행하는 동안 실제 시세를 쓰지 않는 합성 contract test까지 수행할 수 있습니다. 실제 adapter 연결과 5종목 관측만 권리 승인 뒤 실행합니다.
 
 후보를 비교할 때는 빠른 공급자에만 더 자주 물어보지 않습니다. 공통 점수 run은 공급자마다 다섯 종목을 합쳐 총 1 TPS로 round-robin하고, 각 target candle을 분 종료 뒤 10분 동안 계속 관측합니다. 장 종료 30분 뒤와 다음 거래일 13:30에도 같은 봉을 다시 확인합니다. KIS의 T+5초·T+65초 조회나 토스의 더 촘촘한 polling은 원인을 분석하는 별도 diagnostic run으로만 남기고 공급자 점수에는 섞지 않습니다. 공통 스케줄러·시계·manifest가 깨진 날만 모든 후보에서 무효화합니다. 정상 요청의 timeout·오류·봉 부재는 해당 공급자의 실패 증거로 남기며 재실행으로 지우지 않습니다.
 

@@ -7,7 +7,7 @@
 - 운영 코드의 실제 공급자는 아직 `sim`뿐이며 KIS·키움·토스·LS 어댑터는 없다.
 - 현재 분봉 조회 API는 PostgreSQL에 저장된 행만 반환하며 요청 시 공급자 API로 fallback하지 않는다.
 - 이 변경에서 추가한 B2/B3 k6 도구는 GrowAnt REST read leg만 가압한다.
-- 후보별 관측 저장소 P1은 [별도 PR #4](https://github.com/stdiodh/GrowAnt-SERVER/pull/4)에서 구현·검증을 마쳤지만 아직 `develop`에 병합되지 않았다. replay write orchestrator, 서버·DB 지표 수집과 실제 장 5일 비교는 구현·실행 전이다.
+- 후보별 관측 저장소 P1은 [관측 저장소](market-provider-observation-store.md)에 구현돼 있다. replay write orchestrator, 서버·DB 지표 수집과 실제 장 5일 비교는 구현·실행 전이다.
 - 따라서 현재 단계에서는 공급자 우승자를 선언하지 않는다.
 
 2026-08-15 공개 이용 범위 기준으로 토스는 본인 매매 목적 밖의 저장·벤치마크·외부 표시가 `RIGHTS_BLOCKED`다. KIS는 개인 시세의 제3자 제공이 금지되고 내부 저장·벤치마크 범위는 서면 확인 전 `UNKNOWN`이다. 따라서 GrowAnt 공개 운영에 채택 가능한 개인용 무료 API는 현재 없고, 실제 공급자 호출도 Gate 0을 통과한 후보만 수행한다.
@@ -43,7 +43,7 @@
 
 현재 V2 `minute_candles`의 기본키는 `(ticker, bucket_start)`뿐이다. 같은 시각의 KIS·키움·토스·LS 봉을 이 테이블에 넣으면 충돌하거나 높은 revision이 다른 후보 값을 덮으므로 비교 증거로 사용할 수 없다.
 
-실제 후보를 호출하기 전에 canonical V2와 분리된 시험 전용 관측 저장소를 준비한다. 이 기반은 별도 PR #4에 구현되어 있으므로 해당 PR을 병합하고 아래 식별·권리 gate가 유지되는지 확인한 뒤 사용한다. 최소 식별자는 다음과 같다.
+실제 후보를 호출하기 전에 canonical V2와 분리된 시험 전용 관측 저장소를 준비한다. 이 기반은 [P1 관측 저장소](market-provider-observation-store.md)에 구현되어 있으므로 아래 식별·권리 gate가 유지되는지 확인한 뒤 사용한다. 최소 식별자는 다음과 같다.
 
 ```text
 공통: run_id + provider + venue + session + interval + ticker
@@ -53,7 +53,7 @@ candle observation: bucket_start + provider_revision 또는 observation_sequence
 fault/recovery event: fault_id + event_sequence
 ```
 
-관측 저장소는 동일 체결의 중복 수신, 같은 봉의 반복 polling과 revision, 재연결 전후 사건을 덮어쓰지 않는다. PR #4의 P1은 header·URL·credential·raw payload를 저장하지 않고 typed observation과 안전한 count/checksum manifest만 남긴다. 저장·벤치마크·재생·CI·내부 표시·외부 제공의 여섯 권리 판단은 모두 `UNKNOWN`이 아니어야 한다. 다만 여섯 판단이 모두 `ALLOWED`일 필요는 없다. run manifest에 실제로 수행할 purpose를 먼저 고정하고 그 purpose만 `ALLOWED`여야 하며, 사용하지 않는 purpose는 `DENIED`여도 된다. `DENIED`인 용도에는 데이터를 쓰지 않는다. 허용되지 않은 실제 가격·시각열 대신 복원할 수 없는 완전 합성 fixture와 허용된 집계 지표만 사용한다. 시장 데이터는 개인정보가 아니므로 단순 비식별화가 이용 권리를 새로 만들지 않는다.
+관측 저장소는 동일 체결의 중복 수신, 같은 봉의 반복 polling과 revision, 재연결 전후 사건을 덮어쓰지 않는다. P1은 header·URL·credential·raw payload를 저장하지 않고 typed observation과 안전한 count/checksum manifest만 남긴다. 저장·벤치마크·재생·CI·내부 표시·외부 제공의 여섯 권리 판단은 모두 `UNKNOWN`이 아니어야 한다. 다만 여섯 판단이 모두 `ALLOWED`일 필요는 없다. run manifest에 실제로 수행할 purpose를 먼저 고정하고 그 purpose만 `ALLOWED`여야 하며, 사용하지 않는 purpose는 `DENIED`여도 된다. `DENIED`인 용도에는 데이터를 쓰지 않는다. 허용되지 않은 실제 가격·시각열 대신 복원할 수 없는 완전 합성 fixture와 허용된 집계 지표만 사용한다. 시장 데이터는 개인정보가 아니므로 단순 비식별화가 이용 권리를 새로 만들지 않는다.
 
 ## 4. 공급자에는 정상 사용량만 적용
 
@@ -267,7 +267,7 @@ lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, high
 | 단계 | 구현·조사 | 종료 조건 |
 | --- | --- | --- |
 | Gate 0 | KIS·키움·토스·LS와 KRX 승인·코스콤/NXT 계약 경로의 시험, 저장, 벤치마크, 재생, CI, 내부 표시, 외부 제공과 파생 OHLCV 권리 확인 | 현재 토스는 `RIGHTS_BLOCKED`, KIS 저장·벤치마크는 `UNKNOWN`; 후보별 서면 근거에서 필요한 권리가 `ALLOWED`가 됨 |
-| P1 | 시험 전용 관측 저장소, NTP 상태, 공통 시계와 데이터 의미표 구현 | 코드 기반은 PR #4에서 검증 완료·병합 전. 실제 run의 NTP offset 100ms 이하와 후보별 timestamp·venue·session·봉·정정·무체결 의미가 확정됨 |
+| P1 | 시험 전용 관측 저장소, NTP 상태, 공통 시계와 데이터 의미표 구현 | 코드 기반 구현 완료. 실제 run의 NTP offset 100ms 이하와 후보별 timestamp·venue·session·봉·정정·무체결 의미가 확정됨 |
 | P2a | 실제 시세를 포함하지 않는 합성 KIS·키움·LS WebSocket/REST와 토스 REST contract adapter 구현 | payload mapping, pagination, 401·quota·5xx, reconnect 단위 테스트 통과 |
 | P2b | Gate 0을 통과한 후보만 실제 read-only adapter에 연결 | credential이 Git·로그·manifest에 없고 contract probe와 권리 범위가 run에 고정됨 |
 | P3 | 같은 5거래일에 공급자를 동시에 관측하고 30초·2분·10분 통제 단절을 각각 최소 3회 수행한 뒤 backfill | 공통 scored REST protocol과 별도 diagnostic 결과, 공급자 지연·정확성·복구 gate를 통과한 shortlist와 탈락 이유가 재현 가능한 증거로 남음 |
@@ -278,4 +278,4 @@ lower-is-better 지표는 `clamp(100 × (bad - x) / (bad - good), 0, 100)`, high
 
 P6는 최소 20거래일 동안 계약 universe 일일 coverage 100%, backfill 뒤 설명되지 않은 확정 봉 gap·stale 0건, RPO 0을 요구한다. 10분 전송 중단 뒤 backlog drain과 정상화 RTO는 10분 이내, 계약 가용성은 월 99.9% 이상이어야 한다. `MONTHLY_MARKET_DATA_BUDGET_KRW`는 Gate 0에서 숫자로 승인하고 후보의 feed·라이선스·재배포·회선·운영 비용 합계가 이를 넘으면 탈락한다.
 
-다음 순서는 Gate 0 서면 확인과 PR #4 병합이다. 기다리는 동안 P2a 합성 adapter contract test는 진행할 수 있지만, 실제 공급자 호출·저장·벤치마크는 필요한 권리가 `ALLOWED`가 된 후보에만 연다. POC 우승자 결정은 P4 이후, KOSPI 전체 운영 공급자 결정은 P6 이후에만 가능하다. 현재 운영 우승자는 없다.
+다음 순서는 Gate 0 서면 확인과 P2a 합성 adapter contract test다. 실제 공급자 호출·저장·벤치마크는 필요한 권리가 `ALLOWED`가 된 후보에만 연다. POC 우승자 결정은 P4 이후, KOSPI 전체 운영 공급자 결정은 P6 이후에만 가능하다. 현재 운영 우승자는 없다.

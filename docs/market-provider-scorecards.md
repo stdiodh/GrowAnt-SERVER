@@ -1,6 +1,6 @@
 # 공급자 scorecard 초안
 
-이 문서는 `benchmark/market-provider-scorecards/v1`의 네 scorecard를 설명한다. 파일은 [PR #2 공급자 비교 계획](https://github.com/stdiodh/GrowAnt-SERVER/blob/c9a45358c0ca0ce9f02fa8708502f1d26b198ce1/docs/market-provider-benchmark.md)의 문서화된 기준선을 기계가 읽을 수 있게 옮긴 초안이며, 공급자 호출·점수 계산·우승자 결정을 허용하는 frozen 기준이 아니다.
+이 문서는 `benchmark/market-provider-scorecards/v1`의 네 scorecard를 설명한다. 파일은 [공급자 비교 계획](market-provider-benchmark.md)의 문서화된 기준선을 기계가 읽을 수 있게 옮긴 초안이며, 공급자 호출·점수 계산·우승자 결정을 허용하는 frozen 기준이 아니다.
 
 ## 현재 상태
 
@@ -9,9 +9,9 @@
 - 모든 hard gate는 `definitionState=UNRESOLVED`, `metricId=null`, `executable=false`다.
 - 영역별 scoring metric, good·bad, 정성 rubric과 통계 알고리즘이 미결이므로 `metrics`와 각 영역의 `metricIds`는 비어 있다.
 - `GROWANT_LOAD`는 공급자 역할이 아니라 GrowAnt 서버·DB의 별도 수용성 gate이며 공급자 점수에 합산하지 않는다.
-- 이 브랜치는 PR #2의 `docs/market-provider-benchmark.md`에 의존한다. 기준 문서가 `develop`에 병합되기 전에는 이 변경을 독립적인 실행 기준으로 사용할 수 없다.
+- 기준 문서와 scorecard는 같은 변경 묶음에서 관리하지만, scorecard가 `DRAFT`인 동안 독립적인 실행 기준으로 사용할 수 없다.
 
-기준 문서 provenance는 PR #2 commit `c9a45358c0ca0ce9f02fa8708502f1d26b198ce1`, 문서 SHA-256 `279f66b06a44b4cfb031f83bd12f0f471f9bb323b5e42a0ab629f9496bb2b8bd`다. PR #2가 squash 또는 rebase로 병합되면 merged commit을 다시 기록하고 문서 내용 hash가 같은지 확인한다.
+Draft provenance는 기준 문서의 저장소 상대 경로와 exact-byte SHA-256으로 고정한다. feature PR은 squash될 수 있으므로 아직 병합되지 않은 중간 commit SHA를 기준값으로 사용하지 않는다.
 
 ## 역할과 문서화된 비중
 

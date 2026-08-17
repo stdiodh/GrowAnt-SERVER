@@ -117,7 +117,7 @@ class MarketProviderScorecardCatalogTest {
     }
 
     @Test
-    fun `manifest hashes the exact role file bytes and records the PR2 provenance`() {
+    fun `manifest hashes the exact role file bytes and records content provenance`() {
         val bundle = loader.loadForAuthoring(CATALOG_DIRECTORY)
 
         assertThat(bundle.manifestSha256)
@@ -130,9 +130,8 @@ class MarketProviderScorecardCatalogTest {
         bundle.scorecards.values.forEach { scorecard ->
             val provenance = scorecard.provenance.single()
             assertThat(provenance.path).isEqualTo("docs/market-provider-benchmark.md")
-            assertThat(provenance.commit).isEqualTo("c9a45358c0ca0ce9f02fa8708502f1d26b198ce1")
             assertThat(provenance.contentSha256)
-                .isEqualTo("279f66b06a44b4cfb031f83bd12f0f471f9bb323b5e42a0ab629f9496bb2b8bd")
+                .isEqualTo("221abca96e7ba31ed0ccbfcae00624e350fed5c34de150fbf01041e0e1f9baf6")
         }
     }
 
