@@ -25,6 +25,8 @@ GrowAnt의 Kotlin/Spring Boot 백엔드 서버입니다.
 
 ### 기본 원칙
 
+KIS·토스 공급자 응답을 다룰 때는 [공급자 계약 파서](docs/market-provider-contracts.md)의 검증 범위와 실측 전 권리 게이트도 함께 확인합니다.
+
 - 표준 흐름은 `feature/* -> develop -> main`입니다.
 - `main`에는 언제든 실행·배포할 수 있고 QA가 끝난 코드만 둡니다.
 - `develop`에는 QA가 즉시 검증할 수 있는 완결된 API 슬라이스와 이를 지원하는 독립 검증 가능한 변경만 둡니다.
