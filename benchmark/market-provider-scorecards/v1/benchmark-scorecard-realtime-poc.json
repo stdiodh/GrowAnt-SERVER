@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "scorecardVersion": "1.0.0-draft.1",
+  "id": "growant.market-provider.realtime-poc",
+  "role": "REALTIME_POC",
+  "state": "DRAFT",
+  "scoringMode": "WEIGHTED_RANKING",
+  "scoredRunsAllowed": false,
+  "providerRankingAllowed": false,
+  "documentedBaselineState": "DOCUMENTED_NOT_EXECUTABLE",
+  "scoringMetricsState": "UNRESOLVED",
+  "areas": [
+    {
+      "id": "accuracy-recovery",
+      "weightPoints": 40,
+      "metricIds": []
+    },
+    {
+      "id": "latency-connectivity",
+      "weightPoints": 30,
+      "metricIds": []
+    },
+    {
+      "id": "backfill",
+      "weightPoints": 20,
+      "metricIds": []
+    },
+    {
+      "id": "implementation-complexity",
+      "weightPoints": 10,
+      "metricIds": []
+    }
+  ],
+  "documentedHardGates": [
+    {
+      "id": "common.rights-admission",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.independent-reference-accuracy",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.secret-protection",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.timestamp-semantics",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "common.ntp-absolute-offset-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 100,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "common.official-call-limit-compliance",
+      "kind": "CONCEPT",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": null,
+      "numericThreshold": null,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    },
+    {
+      "id": "realtime.tick-age-upper-bound-p95-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 2000,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "realtime.tick-age-upper-bound-p99-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 5000,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "realtime.final-unrecovered-gap-count",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "EQ",
+      "numericThreshold": 0,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "count",
+      "executable": false
+    },
+    {
+      "id": "realtime.unexplained-ohlcv-mismatch-count",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "EQ",
+      "numericThreshold": 0,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "count",
+      "executable": false
+    },
+    {
+      "id": "realtime.reconnect-resubscribe-elapsed-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 10000,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "realtime.backfill-10m-50bucket-elapsed-ms",
+      "kind": "NUMERIC",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "LTE",
+      "numericThreshold": 60000,
+      "booleanThreshold": null,
+      "thresholdVariable": null,
+      "unit": "ms",
+      "executable": false
+    },
+    {
+      "id": "realtime.soak-resource-leak-detected",
+      "kind": "BOOLEAN",
+      "definitionState": "UNRESOLVED",
+      "metricId": null,
+      "operator": "EQ",
+      "numericThreshold": null,
+      "booleanThreshold": false,
+      "thresholdVariable": null,
+      "unit": null,
+      "executable": false
+    }
+  ],
+  "metrics": [],
+  "unresolvedDecisionIds": [
+    "metric-catalog",
+    "metric-good-bad-boundaries",
+    "qualitative-rubrics",
+    "timestamp-quantization-censoring",
+    "missing-and-late-evidence",
+    "aggregation-order",
+    "percentile-algorithm",
+    "confidence-interval-algorithm",
+    "unsupported-feature-policy",
+    "rights-purpose-selection",
+    "independent-reference-definition",
+    "target-session-and-observation-window",
+    "event-age-definition",
+    "reconnect-boundaries",
+    "backfill-workload-selection",
+    "resource-leak-definition",
+    "execution-environment"
+  ],
+  "provenance": [
+    {
+      "path": "docs/market-provider-benchmark.md",
+      "commit": "c9a45358c0ca0ce9f02fa8708502f1d26b198ce1",
+      "contentSha256": "279f66b06a44b4cfb031f83bd12f0f471f9bb323b5e42a0ab629f9496bb2b8bd"
+    }
+  ]
+}
